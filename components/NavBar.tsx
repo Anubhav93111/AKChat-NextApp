@@ -1,26 +1,52 @@
-// components/Navbar.tsx
 "use client";
 
 import { useSession, signOut } from "next-auth/react";
+import Link from "next/link";
 
 export default function Navbar() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
 
   return (
-    <nav className="flex justify-center items-center ">
-      {session ? (
-        <>
-          
-          <button className="w-20 h-10 bg-gray-700 border-rounded border-2 border-gray-400" onClick={() => signOut({ callbackUrl: "/login" })}>
-            Sign Out
-          </button>
-        </>
-      ) : (
-        <div className="p-2 border-2 border-gray-200">
-          <a  href="/login">Login</a>
-        </div>
-        
-      )}
+    <nav className="w-full bg-slate-800 text-white px-6 py-4 flex justify-between items-center shadow-md">
+      {/* Left: Logo */}
+      <Link href="/" className="text-xl font-bold text-blue-400 hover:text-blue-300 transition">
+        AKChat
+      </Link>
+
+      {/* Right: Navigation */}
+      <div className="flex items-center gap-6">
+        <Link
+          href="/"
+          className="hover:text-blue-300 transition duration-200"
+        >
+          Home
+        </Link>
+
+        {status === "authenticated" && session?.user ? (
+          <>
+            <Link
+              href={`/user/${session.user.name}`}
+              className="hover:text-blue-300 transition duration-200"
+            >
+              Dashboard
+            </Link>
+            <span className="text-sm text-slate-300">Hi, {session.user.name}</span>
+            <button
+              onClick={() => signOut({ callbackUrl: "/login" })}
+              className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg transition duration-200"
+            >
+              Sign Out
+            </button>
+          </>
+        ) : (
+          <Link
+            href="/login"
+            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition duration-200"
+          >
+            Login
+          </Link>
+        )}
+      </div>
     </nav>
   );
 }
