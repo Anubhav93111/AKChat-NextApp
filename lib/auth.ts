@@ -1,6 +1,8 @@
 import { NextAuthOptions } from "next-auth";
 import  CredentialsProvider  from "next-auth/providers/credentials";
 import { prisma } from "./prisma";
+import bcrypt from "bcryptjs";
+import { loginSchema} from "./validations/login";
 
 export const authOptions: NextAuthOptions = {
     providers : [
@@ -13,43 +15,30 @@ export const authOptions: NextAuthOptions = {
 
 
             },
-            async authorize(credentials){
-                
-                if(!credentials?.email || !credentials?.password ){
-                    throw new Error("Missing email or password");
-                }
+           async authorize(credentials) {
+  const result = loginSchema.safeParse(credentials);
+  if (!result.success) {
+    throw new Error("Invalid login input");
+  }
 
-                try {
-                    
+  const { email, password } = result.data;
 
-                    const user = await prisma.user.findFirst({where:{email: credentials.email}})
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) {
+    throw new Error("User not found");
+  }
 
-                    if(!user){
-                        throw new Error("User not Found")
-                    }
+  const isValid = await bcrypt.compare(password, user.password);
+  if (!isValid) {
+    throw new Error("Password is incorrect");
+  }
 
-                    // const isValid = await bcrypt.compare(credentials.password, user.password)
-                    
-                    // if(!isValid){
-                    //     throw new Error("Password is not Correct")
-                    // }
-
-                    if( user.password !== credentials.password){
-                        throw new Error("Password is incorrect")
-                    }
-
-                    return {
-                        id: user.id.toString(),
-                        email: user.email,
-                        name: user.name
-                    }
-
-                } catch (error) {
-                    throw error
-                }
-   
-                
-            }
+  return {
+    id: user.id.toString(),
+    email: user.email,
+    name: user.name,
+  };
+}
         })
     ],
     callbacks: {

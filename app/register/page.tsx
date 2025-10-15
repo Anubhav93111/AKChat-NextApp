@@ -8,6 +8,7 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; name?: string }>({});
   const router = useRouter();
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -21,18 +22,27 @@ export default function RegisterPage() {
       });
 
       const contentType = res.headers.get("content-type");
-if (!contentType?.includes("application/json")) {
-  setMessage("❌ Server returned unexpected response");
-  return;
-}
-const data = await res.json();
+      if (!contentType?.includes("application/json")) {
+        setMessage("❌ Server returned unexpected response");
+        return;
+      }
 
+      const data = await res.json();
 
       if (res.ok) {
         setMessage("✅ Registration successful! Redirecting to login...");
         setTimeout(() => router.push("/login"), 2000);
       } else {
-        setMessage(data.message || "❌ Registration failed");
+        if (data.errors) {
+          setFieldErrors({
+            email: data.errors.email?.[0],
+            password: data.errors.password?.[0],
+            name: data.errors.name?.[0],
+          });
+          setMessage(data.message || "❌ Registration failed");
+        } else {
+          setMessage(data.message || "❌ Registration failed");
+        }
       }
     } catch (err) {
       console.log(err);
@@ -56,6 +66,7 @@ const data = await res.json();
           required
           className="bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+        {fieldErrors.name && <p className="text-red-400 text-sm">{fieldErrors.name}</p>}
 
         <input
           type="email"
@@ -65,6 +76,7 @@ const data = await res.json();
           required
           className="bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+        {fieldErrors.email && <p className="text-red-400 text-sm">{fieldErrors.email}</p>}
 
         <input
           type="password"
@@ -74,6 +86,7 @@ const data = await res.json();
           required
           className="bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+        {fieldErrors.password && <p className="text-red-400 text-sm">{fieldErrors.password}</p>}
 
         <button
           type="submit"

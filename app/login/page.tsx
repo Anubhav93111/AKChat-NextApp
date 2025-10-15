@@ -3,14 +3,29 @@
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { loginSchema } from "@/lib/validations/login";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [message, setMessage] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const router = useRouter();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const result = loginSchema.safeParse({ email, password });
+
+    if (!result.success) {
+      const errors = result.error.flatten().fieldErrors;
+      setFieldErrors({
+        email: errors.email?.[0],
+        password: errors.password?.[0],
+      });
+      setMessage("❌ Validation failed");
+      return;
+    }
 
     const res = await signIn("credentials", {
       email,
@@ -29,7 +44,7 @@ export default function LoginPage() {
         router.push("/");
       }
     } else {
-      alert("Invalid credentials");
+      setMessage("❌ Invalid credentials");
     }
   };
 
@@ -49,6 +64,7 @@ export default function LoginPage() {
           required
           className="bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+        {fieldErrors.email && <p className="text-red-400 text-sm">{fieldErrors.email}</p>}
 
         <input
           type="password"
@@ -58,6 +74,7 @@ export default function LoginPage() {
           required
           className="bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
+        {fieldErrors.password && <p className="text-red-400 text-sm">{fieldErrors.password}</p>}
 
         <button
           type="submit"
@@ -66,7 +83,8 @@ export default function LoginPage() {
           Login
         </button>
 
-        {/* Register Now CTA */}
+        {message && <p className="text-center text-sm text-slate-300">{message}</p>}
+
         <p className="text-center text-sm text-slate-400">
           New to AKChat?{" "}
           <button
