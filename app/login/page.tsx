@@ -39,7 +39,7 @@ export default function LoginPage() {
         onSubmit={handleLogin}
         className="bg-slate-800 p-8 rounded-xl shadow-xl w-full max-w-md flex flex-col gap-6"
       >
-        <h2 className="text-2xl font-bold text-center">Login</h2>
+        <h2 className="text-2xl font-bold text-center text-blue-400">Login</h2>
 
         <input
           type="email"
@@ -65,6 +65,18 @@ export default function LoginPage() {
         >
           Login
         </button>
+
+        {/* Register Now CTA */}
+        <p className="text-center text-sm text-slate-400">
+          New to AKChat?{" "}
+          <button
+            type="button"
+            onClick={() => router.push("/register")}
+            className="text-green-400 hover:underline"
+          >
+            Register Now
+          </button>
+        </p>
       </form>
     </div>
   );

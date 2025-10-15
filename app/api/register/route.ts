@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest){
+    console.log("✅ /api/register route hit");
+
     try{
          const {email, password, name} = await req.json();
          if(!email || !password || !name){
@@ -13,9 +15,10 @@ export async function POST(req: NextRequest){
              {email, password, name,}})
 
          return NextResponse.json({ msg: "New user created", user: createdUser }, { status: 201 });    
-    } catch(err){
-        return NextResponse.json({error: err, status:500})
-    }
+    } catch (err) {
+  console.error("Registration error:", err);
+  return NextResponse.json({ message: "Internal Server Error" }, { status: 500 });
+}
  
 
 } 

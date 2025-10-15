@@ -20,7 +20,13 @@ export default function RegisterPage() {
         body: JSON.stringify({ name, email, password }),
       });
 
-      const data = await res.json();
+      const contentType = res.headers.get("content-type");
+if (!contentType?.includes("application/json")) {
+  setMessage("❌ Server returned unexpected response");
+  return;
+}
+const data = await res.json();
+
 
       if (res.ok) {
         setMessage("✅ Registration successful! Redirecting to login...");
@@ -29,6 +35,7 @@ export default function RegisterPage() {
         setMessage(data.message || "❌ Registration failed");
       }
     } catch (err) {
+      console.log(err);
       setMessage("❌ Something went wrong");
     }
   };

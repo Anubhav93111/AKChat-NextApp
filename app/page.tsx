@@ -16,7 +16,8 @@ export default function Home() {
           Welcome to <span className="text-white">AKChat</span>
         </h1>
         <p className="text-lg sm:text-xl text-slate-300 max-w-2xl mb-8">
-          Real-time messaging. Seamless room creation. Secure login. AKChat is your modern chat platform built for speed, simplicity, and connection.
+          Real-time messaging. Seamless room creation. Secure login. AKChat is your modern chat platform built for speed, simplicity, and connection.{" "}
+          <span className="text-green-400 font-semibold">New here?</span> Create an account and start chatting in seconds.
         </p>
         <div className="flex flex-col sm:flex-row gap-4">
           <button
@@ -24,6 +25,12 @@ export default function Home() {
             className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-3 rounded-lg transition duration-200"
           >
             Login & Start Chatting
+          </button>
+          <button
+            onClick={() => router.push("/register")}
+            className="bg-green-600 hover:bg-green-500 text-white px-6 py-3 rounded-lg transition duration-200"
+          >
+            Create Account
           </button>
           <button
             onClick={() => router.push("/user/demo")}

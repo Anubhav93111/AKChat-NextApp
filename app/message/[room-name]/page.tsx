@@ -13,7 +13,10 @@ type ChatMessage = {
 
 export default function MessageRoom() {
   const { data: session, status } = useSession();
+  
   const { "room-name": roomName } = useParams();
+  console.log("🧭 roomName from useParams:", roomName);
+
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [accessDenied, setAccessDenied] = useState(false);
@@ -190,7 +193,7 @@ export default function MessageRoom() {
               e.preventDefault();
               handleSendMessage();
             }
-          }}
+          }} 
           placeholder="Type your message..."
           rows={1}
           className="flex-1 resize-none bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
