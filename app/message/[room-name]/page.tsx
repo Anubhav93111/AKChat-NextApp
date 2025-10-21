@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import Messages from "./comt/message-room/messages";
 import DrawApp from "./comt/canvas-draw/drawApp";
+import VideoCall from "@/components/VideoCall";
 import { RoomSocketProvider } from "@/lib/hooks/useRoomSocket";
 
 export default async function RoomPage({ params }: { params: Promise<{ "room-name": string }> }) {
@@ -19,8 +20,9 @@ export default async function RoomPage({ params }: { params: Promise<{ "room-nam
   return (
   <RoomSocketProvider roomName={roomName} userId={userId}>
       <div className="flex flex-col md:flex-row h-screen">
-        <div className="flex-1 border-r border-slate-700">
-          <Messages />
+        <div className="flex-1 border-r border-slate-700 flex flex-col">
+          <div className="flex-1 overflow-auto"><Messages /></div>
+          <div className="p-2"><VideoCall /></div>
         </div>
         <div className="flex-1">
           <DrawApp />
