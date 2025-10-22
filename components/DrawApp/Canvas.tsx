@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useRef, useState, useEffect } from 'react';
-import CanvasElement from './CanvasElement';
-import CanvasTextEditor from './CanvasTextEditor';
-import { DrawingElement, ElementType, Mode } from './types';
-import rough from 'roughjs/bin/rough';
+import React, { useRef, useState, useEffect } from "react";
+import CanvasElement from "./CanvasElement";
+import CanvasTextEditor from "./CanvasTextEditor";
+import { DrawingElement, ElementType, Mode } from "./types";
+import rough from "roughjs/bin/rough";
+import { Point } from "roughjs/bin/geometry";
 
 const generator = rough.generator();
 
@@ -23,8 +24,9 @@ interface Props {
   zoom: number;
   strokeColor: string;
   strokeWidth: number;
-  ws: React.MutableRefObject<WebSocket | null>;
-
+  wsRef: React.MutableRefObject<WebSocket | null>;
+  roomId: string | null;
+  userId: number | undefined;
 }
 
 export default function Canvas({
@@ -40,18 +42,69 @@ export default function Canvas({
   zoom,
   strokeColor,
   strokeWidth,
-  ws,
+  wsRef,
+  roomId,
+  userId,
 }: Props) {
   const drawingCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const gridCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  // use the provided socketRef from props (do not create a new connection)
-  const socketRef = ws;
 
   const [drawing, setDrawing] = useState(false);
   const [movingElementIndex, setMovingElementIndex] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
   const [originalElement, setOriginalElement] = useState<DrawingElement | null>(null);
+
+  const emit = (payload: any) => {
+    if (wsRef && wsRef.current?.readyState === WebSocket.OPEN && roomId && userId !== undefined) {
+      wsRef.current?.send(JSON.stringify({ ...payload, roomId, userId }));
+    }
+  };
+
+  const getCanvasCoordinates = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    const x = (event.clientX - rect.left) / zoom;
+    const y = (event.clientY - rect.top) / zoom;
+    return { x, y };
+  };
+
+  const drawGrid = () => {
+    const canvas = gridCanvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const width = canvas.width;
+    const height = canvas.height;
+
+    ctx.clearRect(0, 0, width, height);
+
+    const spacing = 30; // 🔹 Fixed small grid spacing
+
+    ctx.strokeStyle = "rgba(13, 255, 0, 0.08)";
+    ctx.lineWidth = 2;
+
+    for (let x = 0; x <= width; x += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, height);
+      ctx.stroke();
+    }
+
+    for (let y = 0; y <= height; y += spacing) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(width, y);
+      ctx.stroke();
+    }
+  };
+
+  useEffect(() => {
+    drawGrid();
+  }, []);
 
   const createElement = (
     x1: number,
@@ -63,7 +116,7 @@ export default function Canvas({
     strokeWidth?: number
   ): DrawingElement => {
     switch (type) {
-      case 'pencil':
+      case "pencil":
         return {
           x1,
           y1,
@@ -75,7 +128,7 @@ export default function Canvas({
           strokeColor,
           strokeWidth,
         };
-      case 'text':
+      case "text":
         return {
           x1,
           y1,
@@ -83,7 +136,7 @@ export default function Canvas({
           y2: y1,
           type,
           roughElement: null,
-          text: '',
+          text: "",
           isEditing: true,
           strokeColor,
           strokeWidth,
@@ -102,17 +155,206 @@ export default function Canvas({
     }
   };
 
-  const getCanvasCoordinates = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
-    const x = (event.clientX - rect.left) / zoom;
-    const y = (event.clientY - rect.top) / zoom;
-    return { x, y };
+  const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const { x, y } = getCanvasCoordinates(event);
+
+    if (mode === "draw") {
+      setDrawing(true);
+      const element = createElement(x, y, x, y, elementType, strokeColor, strokeWidth);
+      updateElements([...elements, element]);
+    }
+
+    if (mode === "move") {
+      const hitIndex = elements.findIndex((el) => isPointInsideElement(x, y, el));
+      if (hitIndex !== -1) {
+        const el = elements[hitIndex];
+        setMovingElementIndex(hitIndex);
+        setDragOffset({ dx: x - el.x1, dy: y - el.y1 });
+        setOriginalElement(el);
+      }
+    }
+  };
+
+  const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const { x, y } = getCanvasCoordinates(event);
+
+    if (drawing && mode === "draw") {
+      const index = elements.length - 1;
+      const el = elements[index];
+      if (!el) return;
+
+      let updated: DrawingElement;
+
+      if (el.type === "pencil") {
+        const newPoints: [number, number][] = [...(el.points || []), [x, y]];
+        const roughElement = generator.linearPath(newPoints, {
+          stroke: el.strokeColor || "#ffffff",
+          strokeWidth: el.strokeWidth || 2,
+        });
+
+        updated = {
+          ...el,
+          points: newPoints,
+          x2: x,
+          y2: y,
+          roughElement,
+        };
+      } else {
+        const options = {
+          stroke: el.strokeColor || "#ffffff",
+          strokeWidth: el.strokeWidth || 2,
+          ...(el.type === "rectangle" ||
+            el.type === "ellipse" ||
+            el.type === "diamond"
+            ? {
+              fill: "#ae1c65ff",
+              fillStyle: "solid",
+            }
+            : {}),
+        };
+
+        let roughElement;
+        switch (el.type) {
+          case "line":
+            roughElement = generator.line(el.x1, el.y1, x, y, options);
+            break;
+          case "rectangle":
+            roughElement = generator.rectangle(el.x1, el.y1, x - el.x1, y - el.y1, options);
+            break;
+          case "ellipse":
+            roughElement = generator.ellipse(
+              (el.x1 + x) / 2,
+              (el.y1 + y) / 2,
+              Math.abs(x - el.x1),
+              Math.abs(y - el.y1),
+              options
+            );
+            break;
+          case "diamond":
+            const midX = (el.x1 + x) / 2;
+            const midY = (el.y1 + y) / 2;
+            const diamondPoints: Point[] = [
+              [midX, el.y1],
+              [x, midY],
+              [midX, y],
+              [el.x1, midY],
+            ];
+
+            roughElement = generator.polygon(diamondPoints, options);
+            break;
+          case "text":
+            roughElement = null;
+            break;
+          default:
+            roughElement = null;
+        }
+
+        updated = {
+          ...el,
+          x2: x,
+          y2: y,
+          roughElement,
+        };
+      }
+
+      const elementsCopy = [...elements];
+      elementsCopy[index] = updated;
+      setElements(elementsCopy);
+
+      emit({ type: "stream", element: updated, index });
+    }
+
+
+
+    if (mode === "move" && movingElementIndex !== null && dragOffset && originalElement) {
+      const { dx, dy } = dragOffset;
+      const newX1 = x - dx;
+      const newY1 = y - dy;
+      const deltaX = newX1 - originalElement.x1;
+      const deltaY = newY1 - originalElement.y1;
+      const newX2 = originalElement.x2 + deltaX;
+      const newY2 = originalElement.y2 + deltaY;
+
+      let updated: DrawingElement;
+      if (originalElement.type === "pencil" && originalElement.points) {
+        const shiftedPoints = originalElement.points.map(([px, py]) => [
+          px + deltaX,
+          py + deltaY,
+        ] as [number, number]);
+        updated = {
+          ...originalElement,
+          x1: newX1,
+          y1: newY1,
+          x2: newX2,
+          y2: newY2,
+          points: shiftedPoints,
+        };
+      } else {
+        updated = {
+          ...originalElement,
+          x1: newX1,
+          y1: newY1,
+          x2: newX2,
+          y2: newY2,
+        };
+      }
+
+      const elementsCopy = [...elements];
+      elementsCopy[movingElementIndex] = updated;
+      setElements(elementsCopy);
+
+      emit({ type: "move", element: updated, index: movingElementIndex });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setDrawing(false);
+    setMovingElementIndex(null);
+    setDragOffset(null);
+    setOriginalElement(null);
+
+    if (mode === "draw") {
+      const finalizedElement = elements[elements.length - 1];
+      if (finalizedElement) {
+        emit({ type: "draw", element: finalizedElement });
+      }
+    }
+  };
+
+  const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    const { x, y } = getCanvasCoordinates(event);
+
+    if (mode === "draw" && elementType === "text") {
+      const newElement: DrawingElement = {
+        x1: x,
+        y1: y,
+        x2: x,
+        y2: y,
+        type: "text",
+        roughElement: null,
+        text: "",
+        isEditing: true,
+        strokeColor,
+        strokeWidth,
+      };
+      updateElements([...elements, newElement]);
+      setEditingIndex(elements.length);
+      setTextValue("");
+    }
+
+    if (mode === "delete") {
+      const hitIndex = elements.findIndex((el) => isPointInsideElement(x, y, el));
+      if (hitIndex !== -1) {
+        const updated = elements.filter((_, i) => i !== hitIndex);
+        updateElements(updated);
+        emit({ type: "delete", index: hitIndex });
+      }
+    }
   };
 
   const isPointInsideElement = (x: number, y: number, el: DrawingElement) => {
     const buffer = 5;
-    if (el.type === 'pencil' && el.points) {
+    if (el.type === "pencil" && el.points) {
       return el.points.some(([px, py]) => {
         const dx = x - px;
         const dy = y - py;
@@ -126,243 +368,61 @@ export default function Canvas({
     return x >= left && x <= right && y >= top && y <= bottom;
   };
 
-  const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    const { x, y } = getCanvasCoordinates(event);
-
-    if (mode === 'draw') {
-      setDrawing(true);
-      const element = createElement(x, y, x, y, elementType, strokeColor, strokeWidth);
-      updateElements([...elements, element]);
-    }
-
-    if (mode === 'move') {
-      const hitIndex = elements.findIndex((el) => isPointInsideElement(x, y, el));
-      if (hitIndex !== -1) {
-        const el = elements[hitIndex];
-        setMovingElementIndex(hitIndex);
-        setDragOffset({ dx: x - el.x1, dy: y - el.y1 });
-        setOriginalElement(el);
-      }
-    }
-  };
-
-  const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
-  const { x, y } = getCanvasCoordinates(event);
-
-  if (drawing && mode === 'draw') {
-    const index = elements.length - 1;
-    const el = elements[index];
-
-    if (!el) return;
-
-    if (el.type === 'pencil') {
-      const newPoints: [number, number][] = [...(el.points || []), [x, y]];
-      const roughElement = generator.linearPath(newPoints, {
-        stroke: el.strokeColor || '#ffffff',
-        strokeWidth: el.strokeWidth || 2,
-      });
-
-      const updated: DrawingElement = {
-        ...el,
-        points: newPoints,
-        x2: x,
-        y2: y,
-        roughElement,
-      };
-
-      const elementsCopy = [...elements];
-      elementsCopy[index] = updated;
-      setElements(elementsCopy);
-
-      ws.current?.send(JSON.stringify({
-        type: 'stream',
-        element: updated,
-        index,
-      }));
-    } else {
-      const updatedElement = createElement(
-        el.x1,
-        el.y1,
-        x,
-        y,
-        el.type,
-        el.strokeColor || '#ffffff',
-        el.strokeWidth || 2
-      );
-
-      const elementsCopy = [...elements];
-      elementsCopy[index] = updatedElement;
-      setElements(elementsCopy);
-
-      ws.current?.send(JSON.stringify({
-        type: 'stream',
-        element: updatedElement,
-        index,
-      }));
-    }
-  }
-
-  if (mode === 'move' && movingElementIndex !== null && dragOffset && originalElement) {
-    const { dx, dy } = dragOffset;
-    const newX1 = x - dx;
-    const newY1 = y - dy;
-    const deltaX = newX1 - originalElement.x1;
-    const deltaY = newY1 - originalElement.y1;
-    const newX2 = originalElement.x2 + deltaX;
-    const newY2 = originalElement.y2 + deltaY;
-
-    let updated: DrawingElement;
-    if (originalElement.type === 'pencil' && originalElement.points) {
-      const shiftedPoints = originalElement.points.map(([px, py]) => [px + deltaX, py + deltaY] as [number, number]);
-      updated = {
-        ...originalElement,
-        x1: newX1,
-        y1: newY1,
-        x2: newX2,
-        y2: newY2,
-        points: shiftedPoints,
-      };
-    } else {
-      updated = {
-        ...originalElement,
-        x1: newX1,
-        y1: newY1,
-        x2: newX2,
-        y2: newY2,
-      };
-    }
-
-    const elementsCopy = [...elements];
-    elementsCopy[movingElementIndex] = updated;
-    setElements(elementsCopy);
-
-    ws.current?.send(JSON.stringify({
-      type: 'move',
-      element: updated,
-      index: movingElementIndex,
-    }));
-  }
-};
-
-  const handleMouseUp = () => {
-    setDrawing(false);
-    setMovingElementIndex(null);
-    setDragOffset(null);
-    setOriginalElement(null);
-
-    if (mode === 'draw') {
-      const finalizedElement = elements[elements.length - 1];
-      if (finalizedElement) {
-        ws.current?.send(JSON.stringify({
-          type: 'draw',
-          element: finalizedElement,
-        }));
-      }
-    }
-  };
-
-  const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    const { x, y } = getCanvasCoordinates(event);
-
-    if (mode === 'draw' && elementType === 'text') {
-      const newElement: DrawingElement = {
-        x1: x,
-        y1: y,
-        x2: x,
-        y2: y,
-        type: 'text',
-        roughElement: null,
-        text: '',
-        isEditing: true,
-        strokeColor,
-        strokeWidth,
-      };
-      updateElements([...elements, newElement]);
-      setEditingIndex(elements.length);
-      setTextValue('');
-    }
-
-    if (mode === 'delete') {
-      const hitIndex = elements.findIndex((el) => isPointInsideElement(x, y, el));
-      if (hitIndex !== -1) {
-        const updated = elements.filter((_, i) => i !== hitIndex);
-        updateElements(updated);
-
-               ws.current?.send(JSON.stringify({
-          type: 'delete',
-          index: hitIndex,
-        }));
-      }
-    }
-  };
-
   useEffect(() => {
-    if (!socketRef) return;
+    const ws = wsRef.current;
+    if (!ws) return;
 
-    const messageHandler = (event: MessageEvent) => {
-      try {
-        const data = JSON.parse(event.data);
 
-        if (data.type === 'init' || data.type === 'sync') {
-          updateElements(data.shapes);
-        }
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
 
-        if (data.type === 'stream') {
-          updateElements((prev) => {
-            const copy = [...prev];
-            copy[data.index] = data.element;
-            return copy;
-          });
-        }
-      } catch (err) {
-        // ignore malformed messages
+      if (data.type === "init" || data.type === "sync") {
+        updateElements(data.shapes);
+      }
+
+      if (data.type === "stream") {
+        updateElements((prev) => {
+          const copy = [...prev];
+          copy[data.index] = data.element;
+          return copy;
+        });
       }
     };
-
-    const openHandler = () => {
-      console.log('✅ Connected to WebSocket server');
-    };
-
-    const closeHandler = () => {
-      console.log('❌ Disconnected from WebSocket server');
-    };
-
-    // attach listeners if there's a WebSocket instance
-    if (socketRef.current) {
-      socketRef.current.addEventListener('message', messageHandler as EventListener);
-      socketRef.current.addEventListener('open', openHandler as EventListener);
-      socketRef.current.addEventListener('close', closeHandler as EventListener);
-    }
-
-    // cleanup
-    return () => {
-      if (socketRef.current) {
-        socketRef.current.removeEventListener('message', messageHandler as EventListener);
-        socketRef.current.removeEventListener('open', openHandler as EventListener);
-        socketRef.current.removeEventListener('close', closeHandler as EventListener);
-      }
-    };
-  }, [socketRef, updateElements]);
+  }, [wsRef]);
 
   return (
     <div
       ref={containerRef}
       style={{
-        position: 'relative',
+        position: "relative",
         width: 800,
         height: 600,
-        margin: '0 auto',
-        border: '4px solid white',
-        background: 'black',
-        boxSizing: 'content-box',
+        margin: "0 auto",
+        border: "4px solid white",
+        background: "black",
+        boxSizing: "content-box",
       }}
     >
-      <CanvasElement
-        elements={elements}
-        zoom={zoom}
-        canvasRef={drawingCanvasRef}
+      {/* Grid Canvas */}
+      <canvas
+        ref={gridCanvasRef}
+        style={{
+          position: "absolute",
+          left: 0,
+          top: 0,
+          pointerEvents: "none",
+          zIndex: 0,
+          width: "800px",
+          height: "600px",
+        }}
+        width={800}
+        height={600}
       />
 
+      {/* Drawing Canvas */}
+      <CanvasElement elements={elements} zoom={zoom} canvasRef={drawingCanvasRef} />
+
+      {/* Overlay Canvas */}
       <canvas
         ref={overlayCanvasRef}
         onMouseDown={handleMouseDown}
@@ -370,19 +430,21 @@ export default function Canvas({
         onMouseUp={handleMouseUp}
         onClick={handleCanvasClick}
         style={{
-          position: 'absolute',
+          position: "absolute",
           left: 0,
           top: 0,
           cursor:
-            mode === 'move'
-              ? 'grab'
-              : mode === 'delete'
-              ? 'pointer'
-              : elementType === 'text'
-              ? 'text'
-              : 'crosshair',
-          width: '800px',
-          height: '600px',
+            mode === "move"
+              ? "grab"
+              : mode === "delete"
+                ? "pointer"
+                : elementType === "text"
+                  ? "text"
+                  : "crosshair",
+          width: "800px",
+          height: "600px",
+            // ✅ solid black
+           zIndex:2
         }}
         width={800}
         height={600}

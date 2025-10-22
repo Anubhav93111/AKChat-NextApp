@@ -113,8 +113,11 @@ export default function DrawApp() {
         zoom={zoom}
         strokeColor={strokeColor}
         strokeWidth={strokeWidth}
-        ws={socketRef}
+        wsRef={socketRef} // ✅ Correct prop name
+  roomId={roomId}
+  userId={userId}
+
       />
     </div>
-  );
+  ); 
 }

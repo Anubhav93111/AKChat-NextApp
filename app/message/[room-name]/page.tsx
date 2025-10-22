@@ -19,15 +19,20 @@ export default async function RoomPage({ params }: { params: Promise<{ "room-nam
 
   return (
   <RoomSocketProvider roomName={roomName} userId={userId}>
-      <div className="flex flex-col md:flex-row h-screen">
-        <div className="flex-1 border-r border-slate-700 flex flex-col">
-          <div className="flex-1 overflow-auto"><Messages /></div>
-          <div className="p-2"><VideoCall /></div>
-        </div>
-        <div className="flex-1">
-          <DrawApp />
-        </div>
-      </div>
+  <div className="flex flex-col w-screen ">
+  <div className="flex-1 overflow-auto">
+    <DrawApp />
+  </div>
+
+  <div className="flex w-full ">
+    <div className="w-1/2 overflow-auto ">
+      <Messages />
+    </div>
+    <div className="w-1/2 p-2 overflow-auto">
+      <VideoCall />
+    </div>
+  </div>
+</div>
     </RoomSocketProvider>
   );
 }
