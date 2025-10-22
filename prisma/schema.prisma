@@ -43,3 +43,11 @@ model Chat {
   user      User     @relation(fields: [userId], references: [id])
   room      RoomId   @relation(fields: [roomId], references: [id])
 }
+
+model Otp {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  otp       String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}

@@ -15,7 +15,9 @@ export default withAuth(
                     pathname.startsWith("/login") ||
                     pathname.startsWith("/register") ||
                     pathname.startsWith("/api/auth") ||
-                    pathname.startsWith("/api/register")
+                    pathname.startsWith("/api/register")||
+                    pathname.startsWith("/api/sendotp")||
+                    pathname.startsWith("/api/verify-otp")
 
                 ) {
                     return true;

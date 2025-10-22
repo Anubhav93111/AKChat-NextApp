@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const registerSchema = z.object({
-  name: z.string().min(3, "Name must be of atleast 2 characters").max(20, "Name must be of atmost 20 characters"),
+  name: z.string().min(3, "Name must be of atleast 2 characters").max(20, "Name must be of atmost 20 characters").regex(/^\S+$/),
   email: z
     .string()
     .email("Invalid email format")
