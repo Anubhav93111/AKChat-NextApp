@@ -6,6 +6,8 @@ import Toolbar from "@/components/DrawApp/ToolBar";
 import Canvas from "@/components/DrawApp/Canvas";
 import { useRoomSocket } from "@/lib/hooks/useRoomSocket";
 
+
+
 type ElementType = "line" | "rectangle" | "diamond" | "ellipse" | "pencil" | "text";
 type Mode = "draw" | "move" | "delete";
 
@@ -81,43 +83,46 @@ export default function DrawApp() {
   };
 
   return (
-    <div className="p-4">
-      <Toolbar
-        elementType={elementType}
-        setElementType={setElementType}
-        mode={mode}
-        setMode={setMode}
-        historyLength={history.length}
-        redoLength={redoStack.length}
-        onUndo={onUndo}
-        onRedo={onRedo}
-        onClear={handleClear}
-        zoom={zoom}
-        setZoom={setZoom}
-        strokeColor={strokeColor}
-        setStrokeColor={setStrokeColor}
-        strokeWidth={strokeWidth}
-        setStrokeWidth={setStrokeWidth}
-      />
+    <>
+  {/* Toolbar floats above everything */}
+  <div className="fixed top-2 left-1/2 transform -translate-x-1/2 z-50">
+    <Toolbar
+      elementType={elementType}
+      setElementType={setElementType}
+      mode={mode}
+      setMode={setMode}
+      historyLength={history.length}
+      redoLength={redoStack.length}
+      onUndo={onUndo}
+      onRedo={onRedo}
+      onClear={handleClear}
+      zoom={zoom}
+      setZoom={setZoom}
+      strokeColor={strokeColor}
+      setStrokeColor={setStrokeColor}
+      strokeWidth={strokeWidth}
+      setStrokeWidth={setStrokeWidth}
+    />
+  </div>
 
-      <Canvas
-        elementType={elementType}
-        mode={mode}
-        elements={elements}
-        setElements={setElements}
-        updateElements={updateElements}
-        editingIndex={editingIndex}
-        setEditingIndex={setEditingIndex}
-        textValue={textValue}
-        setTextValue={setTextValue}
-        zoom={zoom}
-        strokeColor={strokeColor}
-        strokeWidth={strokeWidth}
-        wsRef={socketRef} // ✅ Correct prop name
-  roomId={roomId}
-  userId={userId}
-
-      />
-    </div>
-  ); 
+  {/* Canvas fills the screen behind toolbar */}
+  <Canvas
+    elementType={elementType}
+    mode={mode}
+    elements={elements}
+    setElements={setElements}
+    updateElements={updateElements}
+    editingIndex={editingIndex}
+    setEditingIndex={setEditingIndex}
+    textValue={textValue}
+    setTextValue={setTextValue}
+    zoom={zoom}
+    strokeColor={strokeColor}
+    strokeWidth={strokeWidth}
+    wsRef={socketRef}
+    roomId={roomId}
+    userId={userId}
+  />
+</>
+  );
 }

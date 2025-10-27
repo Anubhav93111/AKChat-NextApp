@@ -105,6 +105,17 @@ export default function CanvasElement({ elements, zoom, canvasRef }: Props) {
 
 
   return (
-    <canvas ref={canvasRef} width={800} height={600} style={{ position: 'absolute', left: 0, top: 0, width: '800px', height: '600px' }} />
+    <canvas
+  ref={canvasRef}
+  style={{
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: "100%",
+    height: "100%",
+    zIndex: 2,
+  }}
+/>
+ 
   );
 }

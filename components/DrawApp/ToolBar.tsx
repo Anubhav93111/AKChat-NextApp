@@ -1,9 +1,22 @@
 "use client";
 
-import React from 'react';
+import React, { JSX } from "react";
+import {
+  FaPencilAlt,
+  FaRegSquare,
+  FaRegCircle,
+  FaSlash,
+  FaFont,
+  FaGem,
+  FaUndo,
+  FaRedo,
+  FaTrash,
+  FaSearchPlus,
+  FaSearchMinus,
+} from "react-icons/fa";
 
-type ElementType = 'line' | 'rectangle' | 'diamond' | 'ellipse' | 'pencil' | 'text';
-type Mode = 'draw' | 'move' | 'delete';
+type ElementType = "line" | "rectangle" | "diamond" | "ellipse" | "pencil" | "text";
+type Mode = "draw" | "move" | "delete";
 
 interface Props {
   elementType: ElementType;
@@ -23,6 +36,15 @@ interface Props {
   setStrokeWidth: (w: number) => void;
 }
 
+const shapeIcons: Record<ElementType, JSX.Element> = {
+  line: <FaSlash />,
+  rectangle: <FaRegSquare />,
+  diamond: <FaGem />,
+  ellipse: <FaRegCircle />,
+  pencil: <FaPencilAlt />,
+  text: <FaFont />,
+};
+
 export default function Toolbar({
   elementType,
   setElementType,
@@ -41,82 +63,90 @@ export default function Toolbar({
   setStrokeWidth,
 }: Props) {
   return (
-    <div className="mb-4 flex flex-wrap gap-4 items-center">
-      {/* Shape selection */}
-      <div className="flex gap-4">
-        {['line', 'rectangle', 'diamond', 'ellipse', 'pencil', 'text'].map((shape) => (
-          <label key={shape} className="flex items-center gap-2 capitalize">
-            <input
-              type="radio"
-              value={shape}
-              checked={elementType === (shape as ElementType)}
-              onChange={() => setElementType(shape as ElementType)}
-              disabled={mode !== 'draw'}
-            />
-            {shape}
-          </label>
-        ))}
-      </div>
-
-      {/* Mode toggle */}
+    <div className="flex flex-wrap items-center gap-4 bg-gray-900 bg-opacity-90 p-3 rounded-xl shadow-lg border border-gray-700">
+      {/* Shape Selection */}
       <div className="flex gap-2">
-        {['draw', 'move', 'delete'].map((m) => (
+        {Object.keys(shapeIcons).map((shape) => (
           <button
-            key={m}
-            onClick={() => setMode(m as Mode)}
-            className={`px-4 py-1 rounded ${mode === m ? 'bg-blue-600' : 'bg-gray-700'} text-white capitalize`}
+            key={shape}
+            onClick={() => setElementType(shape as ElementType)}
+            disabled={mode !== "draw"}
+            className={`p-2 rounded text-xl ${
+              elementType === shape ? "bg-blue-600" : "bg-gray-700"
+            } text-white hover:bg-blue-500 transition`}
+            title={shape}
           >
-            {m} Mode
+            {shapeIcons[shape as ElementType]}
           </button>
         ))}
       </div>
 
-      {/* Undo/Redo */}
+      {/* Mode Toggle */}
+      <div className="flex gap-2">
+        {["draw", "move", "delete"].map((m) => (
+          <button
+            key={m}
+            onClick={() => setMode(m as Mode)}
+            className={`px-3 py-1 rounded ${
+              mode === m ? "bg-blue-600" : "bg-gray-700"
+            } text-white capitalize hover:bg-blue-500 transition`}
+          >
+            {m}
+          </button>
+        ))}
+      </div>
+
+      {/* Undo / Redo */}
       <div className="flex gap-2">
         <button
           onClick={onUndo}
           disabled={historyLength === 0}
-          className="px-4 py-1 bg-gray-700 text-white rounded"
+          className="p-2 bg-gray-700 text-white rounded hover:bg-gray-600 disabled:opacity-50"
+          title="Undo"
         >
-          Undo
+          <FaUndo />
         </button>
         <button
           onClick={onRedo}
           disabled={redoLength === 0}
-          className="px-4 py-1 bg-gray-700 text-white rounded"
+          className="p-2 bg-gray-700 text-white rounded hover:bg-gray-600 disabled:opacity-50"
+          title="Redo"
         >
-          Redo
+          <FaRedo />
         </button>
       </div>
 
       {/* Clear */}
       <button
         onClick={onClear}
-        className="ml-auto px-4 py-1 bg-yellow-600 text-black rounded hover:bg-yellow-500"
+        className="p-2 bg-yellow-600 text-black rounded hover:bg-yellow-500"
+        title="Clear Canvas"
       >
-        Clear Canvas
+        <FaTrash />
       </button>
 
       {/* Zoom Controls */}
-      <div className="flex gap-2 mt-4">
+      <div className="flex gap-2 items-center">
         <button
           onClick={() => setZoom((z) => Math.min(z + 0.1, 5))}
-          className="px-4 py-1 bg-green-600 text-white rounded"
+          className="p-2 bg-green-600 text-white rounded hover:bg-green-500"
+          title="Zoom In"
         >
-          Zoom In
+          <FaSearchPlus />
         </button>
         <button
           onClick={() => setZoom((z) => Math.max(z - 0.1, 0.2))}
-          className="px-4 py-1 bg-red-600 text-white rounded"
+          className="p-2 bg-red-600 text-white rounded hover:bg-red-500"
+          title="Zoom Out"
         >
-          Zoom Out
+          <FaSearchMinus />
         </button>
-        <span className="text-white ml-2">Zoom: {(zoom * 100).toFixed(0)}%</span>
+        <span className="text-white text-sm">Zoom: {(zoom * 100).toFixed(0)}%</span>
       </div>
 
-      {/* Stroke Color & Thickness */}
+      {/* Stroke Color & Width */}
       <div className="flex gap-4 items-center">
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 text-white">
           Color:
           <input
             type="color"
@@ -126,7 +156,7 @@ export default function Toolbar({
           />
         </label>
 
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 text-white">
           Stroke:
           <input
             type="range"

@@ -367,98 +367,99 @@ export default function Canvas({
     const bottom = Math.max(el.y1, el.y2) + buffer;
     return x >= left && x <= right && y >= top && y <= bottom;
   };
+useEffect(() => {
+  const resizeCanvas = () => {
+    const width = window.innerWidth;
+    const height = window.innerHeight;
 
-  useEffect(() => {
-    const ws = wsRef.current;
-    if (!ws) return;
+    [gridCanvasRef, drawingCanvasRef, overlayCanvasRef].forEach((ref) => {
+      if (ref.current) {
+        // Set canvas drawing dimensions
+        ref.current.width = width;
+        ref.current.height = height;
 
-
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-
-      if (data.type === "init" || data.type === "sync") {
-        updateElements(data.shapes);
+        // Set canvas CSS dimensions
+        ref.current.style.width = `${width}px`;
+        ref.current.style.height = `${height}px`;
       }
+    });
 
-      if (data.type === "stream") {
-        updateElements((prev) => {
-          const copy = [...prev];
-          copy[data.index] = data.element;
-          return copy;
-        });
-      }
-    };
-  }, [wsRef]);
+    drawGrid(); // Redraw grid after resizing
+  };
 
-  return (
-    <div
-      ref={containerRef}
+  resizeCanvas(); // Initial sizing
+  window.addEventListener("resize", resizeCanvas);
+
+  return () => {
+    window.removeEventListener("resize", resizeCanvas);
+  };
+}, []);
+
+ return (
+  <div
+    ref={containerRef}
+   style={{
+  position: "fixed", // ✅ anchors to viewport
+  top: 0,
+  left: 0,
+  width: "100vw",
+  height: "100vh",
+  background: "black",
+  overflow: "hidden",
+  zIndex: 0, // ✅ sits behind toolbar
+}}
+  >
+    {/* Grid Canvas */}
+    <canvas
+      ref={gridCanvasRef}
       style={{
-        position: "relative",
-        width: 800,
-        height: 600,
-        margin: "0 auto",
-        border: "4px solid white",
-        background: "black",
-        boxSizing: "content-box",
+  position: "absolute",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: "100%",
+  zIndex: 1, // or 2 for overlay
+}}
+
+    />
+
+    {/* Drawing Canvas */}
+    <CanvasElement elements={elements} zoom={zoom} canvasRef={drawingCanvasRef} />
+
+    {/* Overlay Canvas */}
+    <canvas
+      ref={overlayCanvasRef}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onClick={handleCanvasClick}
+      style={{
+        position: "absolute",
+  top: 0,
+  left: 0,
+  width: "100%",
+  height: "100%",
+        cursor:
+          mode === "move"
+            ? "grab"
+            : mode === "delete"
+            ? "pointer"
+            : elementType === "text"
+            ? "text"
+            : "crosshair",
+        zIndex: 2,
       }}
-    >
-      {/* Grid Canvas */}
-      <canvas
-        ref={gridCanvasRef}
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          pointerEvents: "none",
-          zIndex: 0,
-          width: "800px",
-          height: "600px",
-        }}
-        width={800}
-        height={600}
-      />
+    />
 
-      {/* Drawing Canvas */}
-      <CanvasElement elements={elements} zoom={zoom} canvasRef={drawingCanvasRef} />
-
-      {/* Overlay Canvas */}
-      <canvas
-        ref={overlayCanvasRef}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onClick={handleCanvasClick}
-        style={{
-          position: "absolute",
-          left: 0,
-          top: 0,
-          cursor:
-            mode === "move"
-              ? "grab"
-              : mode === "delete"
-                ? "pointer"
-                : elementType === "text"
-                  ? "text"
-                  : "crosshair",
-          width: "800px",
-          height: "600px",
-            // ✅ solid black
-           zIndex:2
-        }}
-        width={800}
-        height={600}
-      />
-
-      <CanvasTextEditor
-        editingIndex={editingIndex}
-        elements={elements}
-        textValue={textValue}
-        setTextValue={setTextValue}
-        setEditingIndex={setEditingIndex}
-        updateElements={updateElements}
-        canvasRef={drawingCanvasRef}
-      />
-    </div>
-  );
+    <CanvasTextEditor
+      editingIndex={editingIndex}
+      elements={elements}
+      textValue={textValue}
+      setTextValue={setTextValue}
+      setEditingIndex={setEditingIndex}
+      updateElements={updateElements}
+      canvasRef={drawingCanvasRef}
+    />
+  </div>
+);  
 }
