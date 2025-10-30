@@ -1,15 +1,12 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap');
 
 :root {
   --background: #ffffff;
   --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-calligraphy: 'Great Vibes', cursive;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -19,8 +16,15 @@
   }
 }
 
+* {
+  /* margin: 0; */
+  /* padding: 0; */
+  box-sizing: border-box;
+  cursor: url('/brush4.cur'), auto; /* Hide native cursor */
+}
+
 body {
-  font-family: 'Inter', sans-serif;
-  background-color: #0f172a; /* slate-900 */
-  color: #f1f5f9; /* slate-100 */
+  font-family: var(--font-sans), 'Inter', sans-serif;
+  background-color: #0f172a;
+  color: #f1f5f9;
 }

@@ -1,7 +1,7 @@
 // app/message/[room-name]/page.tsx
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import RoomClient from "./RoomClient"; // 👈 new client component
+import RoomClient from "./RoomClient";
 
 export default async function RoomPage({ params }: { params: { "room-name": string } }) {
   const session = await getServerSession(authOptions);

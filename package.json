@@ -12,6 +12,7 @@
     "@prisma/client": "^6.16.3",
     "@react-email/components": "^0.5.7",
     "@react-email/render": "^1.4.0",
+    "@studio-freight/lenis": "^1.0.42",
     "bcryptjs": "^3.0.2",
     "framer-motion": "^12.23.24",
     "motion": "^12.23.24",
