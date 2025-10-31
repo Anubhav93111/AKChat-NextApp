@@ -56,7 +56,7 @@ export default function Messages() {
 
     ws.addEventListener("message", handler);
     return () => ws.removeEventListener("message", handler);
-  }, [socketRef.current]);
+  }, [socketRef]);
 
   useLayoutEffect(() => {
     const el = chatContainerRef.current;

@@ -7,6 +7,16 @@ type Handlers = {
   onConnectionState?: (state: RTCPeerConnectionState, peerId: number) => void;
 };
 
+export type PeerManager = {
+  createPeer: (targetUserId: number, onTrack?: Handlers['onTrack']) => RTCPeerConnection;
+  callUser: (targetUserId: number, localStream?: MediaStream) => Promise<void>;
+  handleOffer: (fromUserId: number, offer: RTCSessionDescriptionInit, localStream?: MediaStream) => Promise<void>;
+  handleAnswer: (fromUserId: number, answer: RTCSessionDescriptionInit) => Promise<void>;
+  handleIce: (fromUserId: number, candidate: RTCIceCandidateInit) => void;
+  closePeer: (peerId: number) => void;
+  dispose: () => void;
+};
+
 export function createPeerManager(
   socketRef: MutableRefObject<WebSocket | null>,
   localUserId: number,
@@ -47,7 +57,7 @@ export function createPeerManager(
   function addLocalTracksIfNeeded(pc: RTCPeerConnection, localStream?: MediaStream) {
     if (!localStream) return;
     try {
-      const existing = pc.getSenders().map((s) => s.track?.id).filter(Boolean as any) as string[];
+      const existing = pc.getSenders().map((s) => s.track?.id).filter((id): id is string => Boolean(id));
       for (const track of localStream.getTracks()) {
         if (!existing.includes(track.id)) {
           pc.addTrack(track, localStream);
@@ -110,5 +120,5 @@ export function createPeerManager(
     peers.clear();
   }
 
-  return { createPeer, callUser, handleOffer, handleAnswer, handleIce, closePeer, dispose };
+  return { createPeer, callUser, handleOffer, handleAnswer, handleIce, closePeer, dispose } satisfies PeerManager;
 }

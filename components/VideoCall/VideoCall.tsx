@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useRoomSocket } from '@/lib/hooks/useRoomSocket';
-import { createPeerManager } from '@/lib/webrtcService';
+import { createPeerManager, type PeerManager } from '@/lib/webrtcService';
 
 export default function VideoCall() {
   const { socketRef, userId, roomId } = useRoomSocket();
@@ -11,7 +11,7 @@ export default function VideoCall() {
   const [cameraOn, setCameraOn] = useState(false);
   const [micOn, setMicOn] = useState(true);
   const [remoteStreams, setRemoteStreams] = useState<Record<number, MediaStream>>({});
-  const managerRef = useRef<any>(null);
+  const managerRef = useRef<PeerManager | null>(null);
   const remoteVideoRefs = useRef<Record<number, HTMLVideoElement | null>>({});
   const [calling, setCalling] = useState(false);
 
@@ -83,6 +83,7 @@ export default function VideoCall() {
       });
       return pc;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [managerRef.current]);
 
   const ensureLocalStream = async () => {

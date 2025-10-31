@@ -59,7 +59,7 @@ export default function Canvas({
   const [originalElement, setOriginalElement] = useState<DrawingElement | null>(null);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  const emit = (payload: any) => {
+  const emit = (payload: Record<string, unknown>) => {
     if (wsRef && wsRef.current?.readyState === WebSocket.OPEN && roomId && userId !== undefined) {
       wsRef.current?.send(JSON.stringify({ ...payload, roomId, userId }));
     }

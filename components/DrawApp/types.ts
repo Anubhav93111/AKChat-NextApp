@@ -7,7 +7,7 @@ export interface DrawingElement {
   x2: number;
   y2: number;
   type: ElementType;
-  roughElement: any;
+  roughElement: unknown;
   points?: [number, number][];
   text?: string;
   isEditing?: boolean;
