@@ -6,10 +6,12 @@ import { DrawingElement } from './types';
 interface Props {
   elements: DrawingElement[];
   zoom: number;
+  panX?: number;
+  panY?: number;
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
 }
 
-export default function CanvasElement({ elements, zoom, canvasRef }: Props) {
+export default function CanvasElement({ elements, zoom, panX = 0, panY = 0, canvasRef }: Props) {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -24,6 +26,8 @@ export default function CanvasElement({ elements, zoom, canvasRef }: Props) {
     // ctx.fillStyle = "#000000";
     // ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Apply pan then zoom so pan is in screen pixels
+    ctx.translate(panX, panY);
     ctx.scale(zoom, zoom);
 
     elements.forEach((el) => {
@@ -101,7 +105,7 @@ export default function CanvasElement({ elements, zoom, canvasRef }: Props) {
     });
 
     ctx.restore();
-  }, [elements, zoom, canvasRef]);
+  }, [elements, zoom, panX, panY, canvasRef]);
 
 
   return (

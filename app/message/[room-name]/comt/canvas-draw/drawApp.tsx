@@ -37,6 +37,34 @@ export default function DrawApp() {
   const [strokeColor, setStrokeColor] = useState("#ffffff");
   const [strokeWidth, setStrokeWidth] = useState(2);
 
+  // Listen for drawing sync events from server
+  React.useEffect(() => {
+    const ws = socketRef?.current;
+    if (!authorized || !ws) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        const data = JSON.parse(event.data as string);
+        if (data.type === "init" && Array.isArray(data.shapes)) {
+          setElements(data.shapes);
+        } else if (data.type === "sync" && Array.isArray(data.shapes)) {
+          setElements(data.shapes);
+        } else if (data.type === "stream" && data.element && typeof data.index === "number") {
+          setElements((prev) => {
+            const next = [...prev];
+            next[data.index] = data.element;
+            return next;
+          });
+        }
+      } catch {
+        // ignore non-JSON or unrelated messages
+      }
+    };
+
+    ws.addEventListener("message", handleMessage as EventListener);
+    return () => ws.removeEventListener("message", handleMessage as EventListener);
+  }, [authorized, socketRef]);
+
   const updateElements = (
     updater: DrawingElement[] | ((prev: DrawingElement[]) => DrawingElement[])
   ) => {
@@ -117,6 +145,7 @@ export default function DrawApp() {
     textValue={textValue}
     setTextValue={setTextValue}
     zoom={zoom}
+    setZoom={setZoom}
     strokeColor={strokeColor}
     strokeWidth={strokeWidth}
     wsRef={socketRef}

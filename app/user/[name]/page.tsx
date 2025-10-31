@@ -2,7 +2,7 @@
 
 import { useSession } from 'next-auth/react';
 import { useParams, useRouter } from 'next/navigation';
-import Navbar from '@/components/NavBar';
+import UserNav from '@/components/UserNav';
 import { useState, useEffect } from 'react';
 
 type Room = {
@@ -126,108 +126,126 @@ export default function UserDashboard() {
   }
 
   return (
-  <div className="min-h-screen w-full bg-slate-900 text-slate-100 font-sans">
-    <Navbar />
-    <div className="w-full py-6 flex flex-col items-center">
-      <h1 className="text-2xl font-semibold">Welcome, {session.user.name}</h1>
+  <div className="min-h-screen w-full bg-slate-950 text-slate-100 font-sans overflow-x-hidden">
+    <UserNav />
+
+    {/* Header / Hero */}
+    <div className="w-full px-4 pt-8 pb-5">
+      <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-3 sm:gap-6 min-w-0">
+        <div>
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight">
+            <span className="bg-gradient-to-r from-indigo-400 via-fuchsia-400 to-emerald-300 bg-clip-text text-transparent">
+              Welcome, {session.user.name}
+            </span>
+          </h1>
+          <p className="mt-1 sm:mt-2 text-slate-300 text-xs sm:text-sm md:text-base">Create, join, and manage your rooms.</p>
+        </div>
+      </div>
     </div>
 
-    {/* Create Room Section */}
-    <div className="bg-slate-800 text-white w-11/12 max-w-xl mx-auto my-4 p-6 rounded-lg shadow-md">
-      <h2 className="text-xl font-semibold mb-4 text-center">Create Room</h2>
-      <input
-        type="text"
-        value={newRoomName}
-        onChange={(e) => setNewRoomName(e.target.value)}
-        placeholder="Enter room name"
-        className="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
-      />
-      <button
-        onClick={createRoom}
-        className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-500 transition duration-200"
-      >
-        Create Room
-      </button>
+    {/* Actions: Create / Join */}
+    <div className="max-w-6xl mx-auto px-4 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+      <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-sm p-5 sm:p-6 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">Create Room</h2>
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 min-w-0">
+          <input
+            type="text"
+            value={newRoomName}
+            onChange={(e) => setNewRoomName(e.target.value)}
+            placeholder="Enter room name"
+            className="flex-1 min-w-0 bg-slate-800/80 text-white px-4 py-2 rounded-xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 placeholder:text-slate-400"
+          />
+          <button
+            onClick={createRoom}
+            className="whitespace-nowrap bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl transition"
+          >
+            Create
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-sm p-5 sm:p-6 shadow-lg">
+        <h2 className="text-lg font-semibold mb-4">Join Room</h2>
+        <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 min-w-0">
+          <input
+            type="text"
+            value={joinRoomId}
+            onChange={(e) => setJoinRoomId(e.target.value)}
+            placeholder="Enter Room ID"
+            className="flex-1 min-w-0 bg-slate-800/80 text-white px-4 py-2 rounded-xl border border-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-400"
+          />
+          <button
+            onClick={joinRoom}
+            className="whitespace-nowrap bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl transition"
+          >
+            Join
+          </button>
+        </div>
+      </div>
     </div>
 
-    {/* Join Room Section */}
-    <div className="bg-slate-800 text-white w-11/12 max-w-xl mx-auto my-4 p-6 rounded-lg shadow-md">
-      <h2 className="text-xl font-semibold mb-4 text-center">Join Room</h2>
-      <input
-        type="text"
-        value={joinRoomId}
-        onChange={(e) => setJoinRoomId(e.target.value)}
-        placeholder="Enter Room ID to Join"
-        className="w-full bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:outline-none focus:ring-2 focus:ring-green-500 mb-4"
-      />
-      <button
-        onClick={joinRoom}
-        className="w-full bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-500 transition duration-200"
-      >
-        Join Room
-      </button>
-    </div>
-
-    {/* Message Feedback */}
+    {/* Feedback */}
     {message && (
-      <p className="text-green-400 text-center my-2 font-medium">{message}</p>
+      <div className="max-w-6xl mx-auto px-4">
+        <p className="text-emerald-400 text-sm md:text-base text-center my-3 font-medium">{message}</p>
+      </div>
     )}
 
-    {/* Room Cards */}
-    <div className="w-full px-4 py-6">
-      <h2 className="text-center text-xl font-semibold mb-6">Current Rooms</h2>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
-        {rooms.map((room) => (
-          <div
-            key={room.id || Math.random().toString()}
-            className="relative bg-slate-800 text-white rounded-xl shadow-xl p-6 flex flex-col justify-between transition-transform hover:scale-[1.02] hover:shadow-2xl"
-          >
-            {/* Header */}
-            <div className="mb-4">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-xl font-bold">{room.name || "Unnamed Room"}</h3>
+    {/* Rooms */}
+    <div className="max-w-6xl mx-auto px-4 pt-4 pb-10">
+      <h2 className="text-lg md:text-xl font-semibold mb-4">Your Rooms</h2>
+      {rooms.length === 0 ? (
+        <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-8 text-center text-slate-400">
+          No rooms yet. Create one to get started.
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+          {rooms.map((room) => (
+            <div
+              key={room.id || Math.random().toString()}
+              className="relative rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-sm p-5 sm:p-6 shadow-lg hover:shadow-xl transition"
+            >
+              <div className="flex items-start justify-between gap-3 mb-4 min-w-0">
+                <h3 className="text-xl font-semibold tracking-tight break-words">{room.name || "Unnamed Room"}</h3>
                 <div className="text-xs text-slate-400 flex items-center gap-2">
-                  <span className="font-mono">
-                    {room.id ? `${room.id.slice(0, 8)}...` : "No ID"}
-                  </span>
+                  <span className="font-mono">{room.id ? `${room.id.slice(0, 8)}...` : "No ID"}</span>
                   {room.id && (
                     <button
                       onClick={() => copyToClipboard(room.id!)}
-                      className="text-blue-400 hover:text-blue-300 transition"
+                      className="rounded-md px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200"
                       title="Copy Room ID"
                     >
-                      📋
+                      Copy
                     </button>
                   )}
                 </div>
               </div>
-            </div>
 
-            {/* Actions */}
-            <div className="flex flex-col gap-3 mt-auto">
-              <button
-                onClick={() => router.push(`/message/${room.name}`)}
-                className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-500 transition duration-200"
-              >
-                Enter Room
-              </button>
-
-              {room.id && (
+              <div className="flex flex-col gap-3">
                 <button
-                  onClick={() => deleteRoom(room.id!)}
-                  className="w-full bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-500 transition duration-200"
+                  onClick={() => router.push(`/message/${room.name}`)}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-xl transition"
                 >
-                  Delete
+                  Enter Room
                 </button>
-              )}
 
-              {copiedRoomId === room.id && (
-                <span className="text-green-400 text-sm text-center">Room ID copied!</span>
-              )}
+                {room.id && (
+                  <button
+                    onClick={() => deleteRoom(room.id!)}
+                    className="w-full bg-rose-600 hover:bg-rose-500 text-white px-4 py-2 rounded-xl transition"
+                  >
+                    Delete
+                  </button>
+                )}
+
+                {copiedRoomId === room.id && (
+                  <span className="text-emerald-400 text-xs text-center">Room ID copied!</span>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   </div>
 )};

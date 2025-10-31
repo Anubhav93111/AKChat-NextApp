@@ -22,6 +22,7 @@ interface Props {
   textValue: string;
   setTextValue: (s: string) => void;
   zoom: number;
+  setZoom?: (z: number) => void;
   strokeColor: string;
   strokeWidth: number;
   wsRef: React.MutableRefObject<WebSocket | null>;
@@ -40,6 +41,7 @@ export default function Canvas({
   textValue,
   setTextValue,
   zoom,
+  setZoom,
   strokeColor,
   strokeWidth,
   wsRef,
@@ -55,6 +57,7 @@ export default function Canvas({
   const [movingElementIndex, setMovingElementIndex] = useState<number | null>(null);
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
   const [originalElement, setOriginalElement] = useState<DrawingElement | null>(null);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const emit = (payload: any) => {
     if (wsRef && wsRef.current?.readyState === WebSocket.OPEN && roomId && userId !== undefined) {
@@ -65,8 +68,8 @@ export default function Canvas({
   const getCanvasCoordinates = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
-    const x = (event.clientX - rect.left) / zoom;
-    const y = (event.clientY - rect.top) / zoom;
+    const x = (event.clientX - rect.left - pan.x) / zoom;
+    const y = (event.clientY - rect.top - pan.y) / zoom;
     return { x, y };
   };
 
@@ -321,6 +324,62 @@ export default function Canvas({
     }
   };
 
+  const handleWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
+    // Two-finger pan or mouse wheel pan
+    if (!event.ctrlKey) {
+      if ((event as any).preventDefault) (event as any).preventDefault();
+      setPan((p) => ({ x: p.x - event.deltaX, y: p.y - event.deltaY }));
+      return;
+    }
+    // Pinch-to-zoom (Ctrl+wheel)
+    if (!setZoom) return;
+    if ((event as any).preventDefault) (event as any).preventDefault();
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mouseX = event.clientX - rect.left;
+    const mouseY = event.clientY - rect.top;
+
+    const zoomFactor = Math.exp(-event.deltaY * 0.0015); // smooth
+    const newZoom = Math.min(5, Math.max(0.2, zoom * zoomFactor));
+    const scale = newZoom / zoom;
+
+    // Keep the point under cursor stable: adjust pan accordingly
+    setPan((p) => ({
+      x: mouseX - (mouseX - p.x) * scale,
+      y: mouseY - (mouseY - p.y) * scale,
+    }));
+    setZoom(newZoom);
+  };
+
+  // Ensure browser doesn't page-zoom or scroll when interacting with canvas (non-passive listener)
+  useEffect(() => {
+    const el = overlayCanvasRef.current;
+    if (!el) return;
+    const wheelHandler = (e: WheelEvent) => {
+      // Prevent browser zoom/scroll and apply our pan/zoom
+      e.preventDefault();
+      if (!e.ctrlKey) {
+        setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
+        return;
+      }
+      if (!setZoom) return;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const zoomFactor = Math.exp(-e.deltaY * 0.0015);
+      const newZoom = Math.min(5, Math.max(0.2, zoom * zoomFactor));
+      const scale = newZoom / zoom;
+      setPan((p) => ({
+        x: mouseX - (mouseX - p.x) * scale,
+        y: mouseY - (mouseY - p.y) * scale,
+      }));
+      setZoom(newZoom);
+    };
+    el.addEventListener('wheel', wheelHandler, { passive: false });
+    return () => el.removeEventListener('wheel', wheelHandler as EventListener);
+  }, [zoom, pan, setZoom]);
+
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const { x, y } = getCanvasCoordinates(event);
 
@@ -424,7 +483,7 @@ useEffect(() => {
     />
 
     {/* Drawing Canvas */}
-    <CanvasElement elements={elements} zoom={zoom} canvasRef={drawingCanvasRef} />
+    <CanvasElement elements={elements} zoom={zoom} panX={pan.x} panY={pan.y} canvasRef={drawingCanvasRef} />
 
     {/* Overlay Canvas */}
     <canvas
@@ -432,6 +491,7 @@ useEffect(() => {
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
+      onWheel={handleWheel}
       onClick={handleCanvasClick}
       style={{
         position: "absolute",
@@ -448,6 +508,7 @@ useEffect(() => {
             ? "text"
             : "crosshair",
         zIndex: 2,
+        touchAction: "none",
       }}
     />
 
