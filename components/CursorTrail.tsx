@@ -27,7 +27,7 @@ export default function CursorTrail() {
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      trail.forEach((dot, i) => {
+      trail.forEach((dot) => {
         ctx.beginPath();
         ctx.arc(dot.x, dot.y, 6, 0, Math.PI * 2);
         ctx.fillStyle = `rgba(56, 189, 248, ${dot.alpha})`; // teal-400

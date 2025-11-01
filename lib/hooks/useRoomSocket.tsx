@@ -50,7 +50,7 @@ export function RoomSocketProvider({
         try {
           const d = JSON.parse(event.data);
           if (d.type === "register-success") setAuthorized(true);
-        } catch (e) {
+        } catch (_e) {
           // ignore
         }
       };

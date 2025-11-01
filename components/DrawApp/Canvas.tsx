@@ -60,8 +60,8 @@ export default function Canvas({
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const emit = (payload: Record<string, unknown>) => {
-    if (wsRef && wsRef.current?.readyState === WebSocket.OPEN && roomId && userId !== undefined) {
-      wsRef.current?.send(JSON.stringify({ ...payload, roomId, userId }));
+    if (wsRef.current?.readyState === WebSocket.OPEN && roomId && userId !== undefined) {
+      wsRef.current.send(JSON.stringify({ ...payload, roomId, userId }));
     }
   };
 
@@ -85,8 +85,7 @@ export default function Canvas({
 
     ctx.clearRect(0, 0, width, height);
 
-    const spacing = 30; // 🔹 Fixed small grid spacing
-
+    const spacing = 30;
     ctx.strokeStyle = "rgba(13, 255, 0, 0.08)";
     ctx.lineWidth = 2;
 
@@ -206,13 +205,11 @@ export default function Canvas({
         const options = {
           stroke: el.strokeColor || "#ffffff",
           strokeWidth: el.strokeWidth || 2,
-          ...(el.type === "rectangle" ||
-            el.type === "ellipse" ||
-            el.type === "diamond"
+          ...(el.type === "rectangle" || el.type === "ellipse" || el.type === "diamond"
             ? {
-              fill: "#ae1c65ff",
-              fillStyle: "solid",
-            }
+                fill: "#ae1c65ff",
+                fillStyle: "solid",
+              }
             : {}),
         };
 
@@ -242,11 +239,7 @@ export default function Canvas({
               [midX, y],
               [el.x1, midY],
             ];
-
             roughElement = generator.polygon(diamondPoints, options);
-            break;
-          case "text":
-            roughElement = null;
             break;
           default:
             roughElement = null;
@@ -267,8 +260,6 @@ export default function Canvas({
       emit({ type: "stream", element: updated, index });
     }
 
-
-
     if (mode === "move" && movingElementIndex !== null && dragOffset && originalElement) {
       const { dx, dy } = dragOffset;
       const newX1 = x - dx;
@@ -280,10 +271,11 @@ export default function Canvas({
 
       let updated: DrawingElement;
       if (originalElement.type === "pencil" && originalElement.points) {
-        const shiftedPoints = originalElement.points.map(([px, py]) => [
+                const shiftedPoints = originalElement.points.map(([px, py]) => [
           px + deltaX,
           py + deltaY,
         ] as [number, number]);
+
         updated = {
           ...originalElement,
           x1: newX1,
@@ -325,25 +317,25 @@ export default function Canvas({
   };
 
   const handleWheel = (event: React.WheelEvent<HTMLCanvasElement>) => {
-    // Two-finger pan or mouse wheel pan
+    event.preventDefault();
+
     if (!event.ctrlKey) {
-      if ((event as any).preventDefault) (event as any).preventDefault();
       setPan((p) => ({ x: p.x - event.deltaX, y: p.y - event.deltaY }));
       return;
     }
-    // Pinch-to-zoom (Ctrl+wheel)
+
     if (!setZoom) return;
-    if ((event as any).preventDefault) (event as any).preventDefault();
+
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
+
     const mouseX = event.clientX - rect.left;
     const mouseY = event.clientY - rect.top;
 
-    const zoomFactor = Math.exp(-event.deltaY * 0.0015); // smooth
+    const zoomFactor = Math.exp(-event.deltaY * 0.0015);
     const newZoom = Math.min(5, Math.max(0.2, zoom * zoomFactor));
     const scale = newZoom / zoom;
 
-    // Keep the point under cursor stable: adjust pan accordingly
     setPan((p) => ({
       x: mouseX - (mouseX - p.x) * scale,
       y: mouseY - (mouseY - p.y) * scale,
@@ -351,33 +343,42 @@ export default function Canvas({
     setZoom(newZoom);
   };
 
-  // Ensure browser doesn't page-zoom or scroll when interacting with canvas (non-passive listener)
   useEffect(() => {
     const el = overlayCanvasRef.current;
     if (!el) return;
+
     const wheelHandler = (e: WheelEvent) => {
-      // Prevent browser zoom/scroll and apply our pan/zoom
       e.preventDefault();
+
       if (!e.ctrlKey) {
         setPan((p) => ({ x: p.x - e.deltaX, y: p.y - e.deltaY }));
         return;
       }
+
       if (!setZoom) return;
+
       const rect = containerRef.current?.getBoundingClientRect();
       if (!rect) return;
+
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
+
       const zoomFactor = Math.exp(-e.deltaY * 0.0015);
       const newZoom = Math.min(5, Math.max(0.2, zoom * zoomFactor));
       const scale = newZoom / zoom;
+
       setPan((p) => ({
         x: mouseX - (mouseX - p.x) * scale,
         y: mouseY - (mouseY - p.y) * scale,
       }));
       setZoom(newZoom);
     };
-    el.addEventListener('wheel', wheelHandler, { passive: false });
-    return () => el.removeEventListener('wheel', wheelHandler as EventListener);
+
+    el.addEventListener("wheel", wheelHandler, { passive: false });
+
+    return () => {
+      el.removeEventListener("wheel", wheelHandler);
+    };
   }, [zoom, pan, setZoom]);
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
@@ -420,107 +421,109 @@ export default function Canvas({
         return dx * dx + dy * dy <= buffer * buffer;
       });
     }
+
     const left = Math.min(el.x1, el.x2) - buffer;
     const right = Math.max(el.x1, el.x2) + buffer;
     const top = Math.min(el.y1, el.y2) - buffer;
     const bottom = Math.max(el.y1, el.y2) + buffer;
+
     return x >= left && x <= right && y >= top && y <= bottom;
   };
-useEffect(() => {
-  const resizeCanvas = () => {
-    const width = window.innerWidth;
-    const height = window.innerHeight;
 
-    [gridCanvasRef, drawingCanvasRef, overlayCanvasRef].forEach((ref) => {
-      if (ref.current) {
-        // Set canvas drawing dimensions
-        ref.current.width = width;
-        ref.current.height = height;
+  useEffect(() => {
+    const resizeCanvas = () => {
+      const width = window.innerWidth;
+      const height = window.innerHeight;
 
-        // Set canvas CSS dimensions
-        ref.current.style.width = `${width}px`;
-        ref.current.style.height = `${height}px`;
-      }
-    });
+      [gridCanvasRef, drawingCanvasRef, overlayCanvasRef].forEach((ref) => {
+        if (ref.current) {
+          ref.current.width = width;
+          ref.current.height = height;
+          ref.current.style.width = `${width}px`;
+          ref.current.style.height = `${height}px`;
+        }
+      });
 
-    drawGrid(); // Redraw grid after resizing
-  };
+      drawGrid();
+    };
 
-  resizeCanvas(); // Initial sizing
-  window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
 
-  return () => {
-    window.removeEventListener("resize", resizeCanvas);
-  };
-}, []);
+    return () => {
+      window.removeEventListener("resize", resizeCanvas);
+    };
+  }, []);
 
- return (
-  <div
-    ref={containerRef}
-   style={{
-  position: "fixed", // ✅ anchors to viewport
-  top: 0,
-  left: 0,
-  width: "100vw",
-  height: "100vh",
-  background: "black",
-  overflow: "hidden",
-  zIndex: 0, // ✅ sits behind toolbar
-}}
-  >
-    {/* Grid Canvas */}
-    <canvas
-      ref={gridCanvasRef}
+  return (
+    <div
+      ref={containerRef}
       style={{
-  position: "absolute",
-  top: 0,
-  left: 0,
-  width: "100%",
-  height: "100%",
-  zIndex: 1, // or 2 for overlay
-}}
-
-    />
-
-    {/* Drawing Canvas */}
-    <CanvasElement elements={elements} zoom={zoom} panX={pan.x} panY={pan.y} canvasRef={drawingCanvasRef} />
-
-    {/* Overlay Canvas */}
-    <canvas
-      ref={overlayCanvasRef}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onWheel={handleWheel}
-      onClick={handleCanvasClick}
-      style={{
-        position: "absolute",
-  top: 0,
-  left: 0,
-  width: "100%",
-  height: "100%",
-        cursor:
-          mode === "move"
-            ? "grab"
-            : mode === "delete"
-            ? "pointer"
-            : elementType === "text"
-            ? "text"
-            : "crosshair",
-        zIndex: 2,
-        touchAction: "none",
+        position: "fixed",
+        top: 0,
+        left: 0,
+        width: "100vw",
+        height: "100vh",
+        background: "black",
+        overflow: "hidden",
+        zIndex: 0,
       }}
-    />
+    >
+      <canvas
+        ref={gridCanvasRef}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          zIndex: 1,
+        }}
+      />
 
-    <CanvasTextEditor
-      editingIndex={editingIndex}
-      elements={elements}
-      textValue={textValue}
-      setTextValue={setTextValue}
-      setEditingIndex={setEditingIndex}
-      updateElements={updateElements}
-      canvasRef={drawingCanvasRef}
-    />
-  </div>
-);  
+      <CanvasElement
+        elements={elements}
+        zoom={zoom}
+        panX={pan.x}
+        panY={pan.y}
+        canvasRef={drawingCanvasRef}
+      />
+
+      <canvas
+        ref={overlayCanvasRef}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onWheel={handleWheel}
+        onClick={handleCanvasClick}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+          cursor:
+            mode === "move"
+              ? "grab"
+              : mode === "delete"
+              ? "pointer"
+              : elementType === "text"
+              ? "text"
+              : "crosshair",
+          zIndex: 2,
+          touchAction: "none",
+        }}
+      />
+
+      <CanvasTextEditor
+        editingIndex={editingIndex}
+        elements={elements}
+        textValue={textValue}
+        setTextValue={setTextValue}
+        setEditingIndex={setEditingIndex}
+        updateElements={updateElements}
+        canvasRef={drawingCanvasRef}
+      />
+    </div>
+  );
 }
