@@ -7,9 +7,9 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 console.log("🔑 Loaded API key:", process.env.RESEND_API_KEY);
 export async function sendOtpEmail(to: string, otp: string) {
   const response = await resend.emails.send({
-    from: "onboarding@resend.dev",
+    from: "inksync.live",
     to,
-    subject: "Your OTP for Chat App",
+    subject: "Your OTP for InKSync.live",
     react: React.createElement(OtpEmails, { otp }),
   });
 
@@ -18,9 +18,9 @@ export async function sendOtpEmail(to: string, otp: string) {
 
 export async function sendRegistrationEmail(to: string, name: string) {
   await resend.emails.send({
-    from: "onboarding@resend.dev",
+    from: "inksync.live",
     to,
-    subject: "Welcome to Chat App!",
+    subject: "Welcome to InKSync!",
     react: React.createElement(RegistrationEmail, { name }), // ✅ keep this
   });
 }

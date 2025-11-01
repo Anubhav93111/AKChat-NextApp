@@ -4,7 +4,7 @@ export default function OtpEmails({ otp }: { otp: string }) {
   return (
     <Html>
       <Head />
-      <Preview>Your Chat App OTP</Preview>
+      <Preview>InkSync OTP</Preview>
       <Body style={{ fontFamily: "Arial", backgroundColor: "#f4f4f4" }}>
         <Container>
           <Text>Your OTP is:</Text>
