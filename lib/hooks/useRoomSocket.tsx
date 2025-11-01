@@ -39,7 +39,7 @@ export function RoomSocketProvider({
       if (!id || !mounted) return;
 
       setRoomId(id);
-      const ws = new WebSocket(`ws://localhost:${process.env.NEXT_PUBLIC_WS_PORT ?? 3010}`);
+      const ws = new WebSocket(`wss://inksync-websocketserver.onrender.com`);
       socketRef.current = ws;
 
       ws.onopen = () => {
