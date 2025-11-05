@@ -39,24 +39,37 @@ export function RoomSocketProvider({
       if (!id || !mounted) return;
 
       setRoomId(id);
-      const ws = new WebSocket(`wss://inksync-websocketserver.onrender.com`);
+      // Use production websocket by default. Allow overriding with NEXT_PUBLIC_WS_URL.
+      // The provided host is https://inksync-websocketserver.onrender.com — for WebSocket use wss://
+      const wsUrl = (process.env.NEXT_PUBLIC_WS_URL as string) || `wss://inksync-websocketserver.onrender.com`;
+      const ws = new WebSocket(wsUrl);
       socketRef.current = ws;
 
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: "register", roomId: id, userId }));
       };
 
+      ws.onopen = () => {
+        console.log('[RoomSocket] websocket opened');
+        ws.send(JSON.stringify({ type: "register", roomId: id, userId }));
+      };
+
       ws.onmessage = (event) => {
         try {
           const d = JSON.parse(event.data);
+          console.log('[RoomSocket] message received', d);
           if (d.type === "register-success") setAuthorized(true);
-        } catch (_e) {
-          // ignore
+        } catch (err) {
+          console.warn('[RoomSocket] failed to parse message', err);
         }
       };
 
-      ws.onerror = () => {
-        // keep authorized false
+      ws.onerror = (ev) => {
+        console.error('[RoomSocket] websocket error', ev);
+      };
+
+      ws.onclose = (ev) => {
+        console.warn('[RoomSocket] websocket closed', ev.code, ev.reason);
       };
     };
 

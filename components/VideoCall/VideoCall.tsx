@@ -9,174 +9,300 @@ export default function VideoCall() {
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
-  const [micOn, setMicOn] = useState(true);
+  const [micOn, setMicOn] = useState(false);
+  const localStreamRef = useRef<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<number, MediaStream>>({});
   const managerRef = useRef<PeerManager | null>(null);
   const remoteVideoRefs = useRef<Record<number, HTMLVideoElement | null>>({});
+  // monitors for remote audio activity to avoid feedback/echo
+  const remoteAudioMonitors = useRef<Record<number, {
+    ctx: AudioContext;
+    source: MediaStreamAudioSourceNode;
+    analyser: AnalyserNode;
+    rafId?: number;
+    silenceTimeout?: number;
+  }>>({});
   const [calling, setCalling] = useState(false);
+  const callingRef = useRef<boolean>(false);
+  const [registered, setRegistered] = useState(false);
+  const [autoMuted, setAutoMuted] = useState(false); // true when auto-muting mic due to remote audio
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        stream.getVideoTracks().forEach((t) => (t.enabled = false));
+        stream.getAudioTracks().forEach((t) => (t.enabled = false));
+        setLocalStream(stream);
+        localStreamRef.current = stream;
+      } catch (e) {
+        console.error("Failed to get media stream", e);
+      }
+    })();
+  }, []);
+
+  // keep ref in sync with state
+  useEffect(() => {
+    localStreamRef.current = localStream;
+  }, [localStream]);
+
+  // keep calling ref in sync
+  useEffect(() => {
+    callingRef.current = calling;
+  }, [calling]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!socketRef?.current) return;
 
-    const manager = createPeerManager(socketRef, userId, {
-      onTrack: (stream: MediaStream, peerId: number) => {
+    const manager = createPeerManager(socketRef, userId ? Number(userId) : undefined, {
+      onTrack: (stream, peerId) => {
         setRemoteStreams((prev) => ({ ...prev, [peerId]: stream }));
         const el = remoteVideoRefs.current[peerId];
         if (el) el.srcObject = stream;
+        // start monitoring remote audio to reduce echo by auto-muting local mic while others speak
+        try {
+          startRemoteAudioMonitor(peerId, stream);
+        } catch (err) {
+          console.warn('failed to start remote audio monitor', err);
+        }
       },
     });
 
     managerRef.current = manager;
 
-    const messageHandler = (ev: MessageEvent) => {
+    const handler = (ev: MessageEvent) => {
+      let parsed: unknown;
       try {
-        const d = JSON.parse(ev.data);
-        if (d.type === "webrtc-offer") {
-          manager.handleOffer(d.fromUserId, d.data, localStream || undefined);
+        parsed = JSON.parse(ev.data);
+      } catch (err) {
+        console.warn('[VideoCall] failed to parse ws message', err);
+        return;
+      }
+
+      console.log('[VideoCall] ws message', parsed);
+
+      if (typeof parsed !== 'object' || parsed === null || !('type' in parsed)) return;
+      const msg = parsed as Record<string, unknown>;
+      const type = String(msg.type);
+
+      if (type === "register-success") {
+        setRegistered(true);
+      }
+
+      if (type === "error") {
+        console.error('[VideoCall] server error:', msg.message ?? msg);
+      }
+
+      if (type === "webrtc-offer") {
+        const from = typeof msg.fromUserId === 'number' ? msg.fromUserId : Number(msg.fromUserId);
+        manager.handleOffer(from, msg.data as RTCSessionDescriptionInit, localStream || undefined);
+      }
+      if (type === "webrtc-answer") {
+        const from = typeof msg.fromUserId === 'number' ? msg.fromUserId : Number(msg.fromUserId);
+        manager.handleAnswer(from, msg.data as RTCSessionDescriptionInit);
+      }
+      if (type === "webrtc-ice") {
+        const from = typeof msg.fromUserId === 'number' ? msg.fromUserId : Number(msg.fromUserId);
+        manager.handleIce(from, msg.data as RTCIceCandidateInit);
+      }
+
+      if (type === "user-list" && callingRef.current) {
+        const usersRaw = msg.users;
+        const users = Array.isArray(usersRaw) ? usersRaw.map((u) => Number(u)) : [];
+        const others = users.filter((id) => id !== Number(userId));
+        const manager = managerRef.current;
+        if (!manager) return;
+
+        const s = localStreamRef.current;
+        for (const id of others) {
+          try {
+            console.log('[VideoCall] initiating call to', id);
+            manager.callUser(id, s || undefined);
+          } catch (err) {
+            console.warn('callUser failed', id, err);
+          }
         }
-        if (d.type === "webrtc-answer") {
-          manager.handleAnswer(d.fromUserId, d.data);
-        }
-        if (d.type === "webrtc-ice") {
-          manager.handleIce(d.fromUserId, d.data);
-        }
-      } catch {
-        // ignore
+        // reset calling flag after initiating calls
+        setCalling(false);
       }
     };
 
-    const socket = socketRef.current;
-    socket.addEventListener("message", messageHandler);
-
+    const sock = socketRef.current;
+    const monitorsSnapshot = remoteAudioMonitors.current;
+    sock.addEventListener("message", handler);
     return () => {
-      socket.removeEventListener("message", messageHandler);
+      sock?.removeEventListener("message", handler);
       manager.dispose();
-    };
-  }, [socketRef, userId, localStream]);
-
-  useEffect(() => {
-    if (localVideoRef.current) {
-      if (localStream && cameraOn) {
-        localVideoRef.current.srcObject = localStream;
-      } else {
-        localVideoRef.current.srcObject = null;
+      // stop audio monitors using the snapshot
+      for (const idStr of Object.keys(monitorsSnapshot)) {
+        const id = Number(idStr);
+        stopRemoteAudioMonitor(id);
       }
-    }
-  }, [localStream, cameraOn]);
-
-  useEffect(() => {
-    if (!managerRef.current) return;
-    const manager = managerRef.current;
-    const originalCreate = manager.createPeer.bind(manager);
-
-    manager.createPeer = (targetUserId: number, onTrack?: (stream: MediaStream, peerId: number) => void) => {
-      const pc = originalCreate(targetUserId, (stream: MediaStream, peerId: number) => {
-        setRemoteStreams((prev) => ({ ...prev, [peerId]: stream }));
-        const el = remoteVideoRefs.current[peerId];
-        if (el) el.srcObject = stream;
-        onTrack?.(stream, peerId);
-      });
-      return pc;
     };
-  }, []);
+  }, [socketRef, userId]);
 
-  const ensureLocalStream = async () => {
-    if (localStream) return localStream;
+  // Helper: apply effective mic enabled state (user preference AND auto-mute)
+  function applyEffectiveMicState(userMicOn: boolean, autoMutedFlag: boolean, s?: MediaStream | null) {
+    const effective = userMicOn && !autoMutedFlag;
+    const str = s || localStreamRef.current;
+    if (!str) return;
+    str.getAudioTracks().forEach((t) => {
+      try { t.enabled = effective; } catch {}
+    });
+  }
+
+  function setAutoMute(flag: boolean) {
+    setAutoMuted(flag);
+    applyEffectiveMicState(micOn, flag, localStreamRef.current);
+  }
+
+  function startRemoteAudioMonitor(peerId: number, stream: MediaStream) {
+    // if already monitoring, skip
+    if (remoteAudioMonitors.current[peerId]) return;
     try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      setLocalStream(s);
-      setCameraOn(true);
-      if (localVideoRef.current) localVideoRef.current.srcObject = s;
-      return s;
-    } catch (e) {
-      console.error("getUserMedia failed", e);
-      return null;
-    }
-  };
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const AudioCtor = (window as any).AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioCtor();
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      source.connect(analyser);
 
-  const toggleCamera = async () => {
-    if (!localStream) {
-      const s = await ensureLocalStream();
-      if (s) {
-        setCameraOn(true);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      let rafId: number | undefined;
+      let silenceTimer: number | undefined;
+
+      const threshold = 15; // tune this threshold (0-255)
+      const check = () => {
+        analyser.getByteFrequencyData(data);
+        // compute average
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        const avg = sum / data.length;
+        if (avg > threshold) {
+          // remote is speaking — auto-mute local mic
+          setAutoMute(true);
+          if (silenceTimer) {
+            clearTimeout(silenceTimer);
+            silenceTimer = undefined;
+          }
+        } else {
+          // schedule unmute after short silence
+          if (!silenceTimer) {
+            silenceTimer = window.setTimeout(() => {
+              setAutoMute(false);
+              silenceTimer = undefined;
+            }, 700);
+          }
+        }
+        rafId = window.requestAnimationFrame(check);
+      };
+
+      rafId = window.requestAnimationFrame(check);
+      remoteAudioMonitors.current[peerId] = { ctx, source, analyser, rafId, silenceTimeout: silenceTimer };
+    } catch (err) {
+      console.warn('audio monitor failed', err);
+    }
+  }
+
+  function stopRemoteAudioMonitor(peerId: number) {
+    const m = remoteAudioMonitors.current[peerId];
+    if (!m) return;
+    try {
+      if (m.rafId) cancelAnimationFrame(m.rafId);
+    } catch {}
+    try { m.source.disconnect(); } catch {}
+    try { m.analyser.disconnect(); } catch {}
+    try { m.ctx.close(); } catch {}
+    delete remoteAudioMonitors.current[peerId];
+  }
+
+  useEffect(() => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream]);
+
+  useEffect(() => {
+    if (cameraOn && localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [cameraOn, localStream]);
+
+  useEffect(() => {
+    if (!socketRef?.current || !registered) return;
+
+    const startStreaming = async () => {
+      // ensure we have a local stream and enable tracks
+      let s = localStreamRef.current;
+      try {
+        if (!s) {
+          s = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          setLocalStream(s);
+          localStreamRef.current = s;
+        }
+
         s.getVideoTracks().forEach((t) => (t.enabled = true));
-      }
-      return;
-    }
+        s.getAudioTracks().forEach((t) => (t.enabled = true));
+        setCameraOn(true);
+        setMicOn(true);
 
+        const socket = socketRef.current!;
+        const trySend = () => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: "request-user-list" }));
+            setCalling(true);
+            callingRef.current = true;
+          } else {
+            setTimeout(trySend, 100);
+          }
+        };
+
+        trySend();
+      } catch (e) {
+        console.error('Failed to start local stream on register', e);
+      }
+    };
+
+    startStreaming();
+  }, [localStream, socketRef, registered]);
+
+  const toggleCamera = () => {
+    if (!localStream) return;
     const newState = !cameraOn;
     localStream.getVideoTracks().forEach((t) => (t.enabled = newState));
     setCameraOn(newState);
-  };
 
-  const toggleMic = async () => {
-    if (!localStream) {
-      const s = await ensureLocalStream();
-      if (s) {
-        setMicOn(true);
-        s.getAudioTracks().forEach((t) => (t.enabled = true));
-      }
-      return;
-    }
-
-    const newState = !micOn;
-    localStream.getAudioTracks().forEach((t) => (t.enabled = newState));
-    setMicOn(newState);
-  };
-
-  const callAll = () => {
-    if (!socketRef?.current) return;
-    setCalling(true);
-    socketRef.current.send(JSON.stringify({ type: "request-user-list" }));
-  };
-
-  useEffect(() => {
-    if (!socketRef?.current) return;
-
-    const handler = (ev: MessageEvent) => {
-      try {
-        const d = JSON.parse(ev.data);
-        if (d.type === "user-list" && calling) {
-          const users: number[] = d.users || [];
-          const others = users.filter((id: number) => id !== userId);
-          const manager = managerRef.current;
-          if (!manager) return;
-
-          (async () => {
-            let s = localStream;
-            if (!s) {
-              try {
-                s = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-                setLocalStream(s);
-                if (localVideoRef.current) localVideoRef.current.srcObject = s;
-              } catch (e) {
-                console.error("getUserMedia failed during callAll", e);
-                setCalling(false);
-                return;
-              }
-            }
-
-            for (const id of others) {
-              try {
-                manager.callUser(id, s);
-              } catch (e) {
-                console.warn("callUser failed", id, e);
-              }
-            }
-          })();
+    // when enabling camera, trigger a user-list request so peers are called immediately
+    if (newState && socketRef?.current) {
+      setCalling(true);
+      callingRef.current = true;
+      const socket = socketRef.current;
+      const trySend = () => {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ type: "request-user-list" }));
+        } else {
+          setTimeout(trySend, 150);
         }
-      } catch {
-        // ignore
-      }
-    };
+      };
+      trySend();
+    }
+  };
 
-    const socket = socketRef.current;
-    socket.addEventListener("message", handler);
-
-    return () => {
-      socket.removeEventListener("message", handler);
-    };
-  }, [socketRef, calling, localStream, userId]);
+    const toggleMic = () => {
+    if (!localStream) return;
+    const newState = !micOn;
+    setMicOn(newState);
+    applyEffectiveMicState(newState, autoMuted, localStream);
+  };
 
   return (
     <div className="p-2 bg-slate-800 rounded">
@@ -184,29 +310,23 @@ export default function VideoCall() {
         <button
           onClick={toggleCamera}
           className={`px-3 py-2 rounded-md font-medium ${
-            cameraOn ? "bg-green-500 text-white" : "bg-black text-white"
-          }`}
+            cameraOn ? "bg-green-500" : "bg-black"
+          } text-white`}
         >
           {cameraOn ? "Camera On" : "Camera Off"}
         </button>
-
         <button
           onClick={toggleMic}
           className={`px-3 py-2 rounded-md font-medium ${
-            micOn ? "bg-green-500 text-white" : "bg-black text-white"
-          }`}
+            micOn ? "bg-green-500" : "bg-black"
+          } text-white`}
         >
           {micOn ? "Mic On" : "Mic Off"}
         </button>
-
-        <button
-          onClick={callAll}
-          className={`px-3 py-2 rounded-md font-semibold text-white ${
-            calling ? "bg-amber-500" : "bg-indigo-600 hover:bg-indigo-700"
-          }`}
-        >
-          {calling ? "Calling..." : "Call Active"}
-        </button>
+        <div className="px-3 py-2 rounded-md font-semibold text-white bg-slate-700 flex items-center gap-2">
+          <span className={`inline-block w-2 h-2 rounded-full ${cameraOn ? 'bg-green-400' : 'bg-red-500'}`} />
+          <span className="text-sm">{cameraOn ? 'Streaming' : 'Not streaming'}</span>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2 items-start">
@@ -218,42 +338,13 @@ export default function VideoCall() {
             }`}
             style={{ height: 220 }}
           >
-            {localStream && cameraOn ? (
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center gap-2 text-slate-200">
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="w-16 h-16 text-slate-300"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                    d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z"
-                  />
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={1.5}
-                                        d="M6 20a6 6 0 0112 0"
-                  />
-                </svg>
-                <div className="text-sm">Camera is off</div>
-                <div className={`text-xs ${micOn ? 'text-green-400' : 'text-red-400'}`}>
-                  {micOn ? 'Mic on' : 'Mic muted'}
-                </div>
-              </div>
-            )}
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              style={{ width: "100%", height: "100%", backgroundColor: "black" }}
+            />
           </div>
         </div>
 
@@ -266,12 +357,13 @@ export default function VideoCall() {
             {Object.keys(remoteStreams).map((k) => {
               const id = Number(k);
               const stream = remoteStreams[id];
-              const hasVideo = !!stream && stream.getVideoTracks().some((t) => t.enabled !== false);
+              const hasVideo =
+                !!stream && stream.getVideoTracks().some((t) => t.enabled !== false);
               return (
                 <div
                   key={k}
                   className={`w-full rounded-xl overflow-hidden border-4 ${
-                    hasVideo ? 'border-red-600' : 'border-slate-700'
+                    hasVideo ? "border-red-600" : "border-slate-700"
                   }`}
                   style={{ height: 220 }}
                 >
@@ -282,7 +374,9 @@ export default function VideoCall() {
                       className="w-full h-full object-cover"
                       ref={(el) => {
                         remoteVideoRefs.current[id] = el;
-                        if (el && stream) el.srcObject = stream;
+                        if (el && stream) {
+                          el.srcObject = stream;
+                        }
                       }}
                     />
                   ) : (
