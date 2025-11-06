@@ -20,7 +20,12 @@ export function createPeerManager(
   const peers = new Map<number, RTCPeerConnection>();
 
   function createPeer(peerId: number): RTCPeerConnection {
-    if (peers.has(peerId)) return peers.get(peerId)!;
+    if (peers.has(peerId)) {
+      console.log('[webrtcService] returning existing peer for', peerId);
+      return peers.get(peerId)!;
+    }
+
+    console.log('[webrtcService] creating new RTCPeerConnection for', peerId);
 
     const pc = new RTCPeerConnection({
       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -28,21 +33,31 @@ export function createPeerManager(
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        try { console.log('[webrtcService] sending ice to', peerId); } catch { }
-        socketRef.current?.send(
-          JSON.stringify({
-            type: "webrtc-ice",
-            targetUserId: peerId,
-            fromUserId: localUserId,
-            data: event.candidate,
-          })
-        );
+        try { console.log('[webrtcService] sending ice to', peerId, event.candidate?.candidate?.slice?.(0,200)); } catch { }
+        try {
+          const sock = socketRef.current;
+          if (!sock) return;
+          if (sock.readyState !== WebSocket.OPEN) {
+            console.warn('[webrtcService] socket not open when sending ICE, readyState=', sock.readyState);
+            return;
+          }
+          sock.send(
+            JSON.stringify({
+              type: "webrtc-ice",
+              targetUserId: peerId,
+              fromUserId: localUserId,
+              data: event.candidate,
+            })
+          );
+        } catch (err) {
+          console.error('[webrtcService] failed to send ice', err);
+        }
       }
     };
 
     pc.ontrack = (event) => {
       const stream = event.streams[0];
-      try { console.log('[webrtcService] ontrack from', peerId, stream); } catch { }
+      try { console.log('[webrtcService] ontrack from', peerId, stream, 'tracks', stream.getTracks().map(t => ({kind:t.kind,id:t.id,enabled:t.enabled}))); } catch { }
       options.onTrack?.(stream, peerId);
     };
 
@@ -58,15 +73,24 @@ export function createPeerManager(
   function addLocalTracksIfNeeded(pc: RTCPeerConnection, localStream?: MediaStream) {
     if (!localStream) return;
     try {
-      const existing = pc
-        .getSenders()
-        .map((s) => s.track?.id)
-        .filter((id): id is string => typeof id === "string");
+      const senders = pc.getSenders();
+      const existing = senders.map((s) => ({ id: s.track?.id, kind: s.track?.kind }));
+      console.log('[webrtcService] existing senders before addTrack', existing);
       for (const track of localStream.getTracks()) {
-        if (!existing.includes(track.id)) {
+        if (!existing.some((e) => e.id === track.id)) {
+          console.log('[webrtcService] adding local track', track.kind, track.id);
           pc.addTrack(track, localStream);
+        } else {
+          console.log('[webrtcService] track already added', track.kind, track.id);
         }
       }
+      // log senders after a short tick
+      setTimeout(() => {
+        try {
+          const after = pc.getSenders().map((s) => ({ id: s.track?.id, kind: s.track?.kind }));
+          console.log('[webrtcService] senders after addTrack', after);
+        } catch {}
+      }, 50);
     } catch {
       // ignore addTrack errors
     }
@@ -78,18 +102,32 @@ export function createPeerManager(
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-  try { console.log('[webrtcService] sending offer to', targetUserId); } catch { }
-    socketRef.current?.send(
-      JSON.stringify({
-        type: "webrtc-offer",
-        targetUserId,
-        fromUserId: localUserId,
-        data: offer,
-      })
-    );
+    try {
+      console.log('[webrtcService] sending offer to', targetUserId, 'sdpLen=', String(offer.sdp?.length ?? 0));
+      const sock = socketRef.current;
+      if (!sock) {
+        console.warn('[webrtcService] socket null when sending offer');
+        return;
+      }
+      if (sock.readyState !== WebSocket.OPEN) {
+        console.warn('[webrtcService] socket not open when sending offer, readyState=', sock.readyState);
+        return;
+      }
+      sock.send(
+        JSON.stringify({
+          type: "webrtc-offer",
+          targetUserId,
+          fromUserId: localUserId,
+          data: offer,
+        })
+      );
+    } catch (err) {
+      console.error('[webrtcService] failed to send offer to', targetUserId, err);
+    }
   }
 
   async function handleOffer(fromUserId: number, offer: RTCSessionDescriptionInit, localStream?: MediaStream) {
+    console.log('[webrtcService] handleOffer from', fromUserId, 'sdpLen=', String(offer.sdp?.length ?? 0));
     const pc = createPeer(fromUserId);
     // Typical order: set remote description first, then add local tracks and create answer
     try {
@@ -98,22 +136,36 @@ export function createPeerManager(
       console.warn('[webrtcService] setRemoteDescription failed for offer from', fromUserId, err);
     }
 
-    addLocalTracksIfNeeded(pc, localStream);
+  addLocalTracksIfNeeded(pc, localStream);
 
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-  try { console.log('[webrtcService] sending answer to', fromUserId); } catch { }
-    socketRef.current?.send(
-      JSON.stringify({
-        type: "webrtc-answer",
-        targetUserId: fromUserId,
-        fromUserId: localUserId,
-        data: answer,
-      })
-    );
+    try {
+      console.log('[webrtcService] sending answer to', fromUserId, 'sdpLen=', String(answer.sdp?.length ?? 0));
+      const sock = socketRef.current;
+      if (!sock) {
+        console.warn('[webrtcService] socket null when sending answer');
+        return;
+      }
+      if (sock.readyState !== WebSocket.OPEN) {
+        console.warn('[webrtcService] socket not open when sending answer, readyState=', sock.readyState);
+        return;
+      }
+      sock.send(
+        JSON.stringify({
+          type: "webrtc-answer",
+          targetUserId: fromUserId,
+          fromUserId: localUserId,
+          data: answer,
+        })
+      );
+    } catch (err) {
+      console.error('[webrtcService] failed to send answer to', fromUserId, err);
+    }
   }
 
   async function handleAnswer(fromUserId: number, answer: RTCSessionDescriptionInit) {
+    console.log('[webrtcService] handleAnswer from', fromUserId, 'sdpLen=', String(answer.sdp?.length ?? 0));
     const pc = peers.get(fromUserId);
     if (!pc) return;
     try {
@@ -121,15 +173,25 @@ export function createPeerManager(
     } catch {
       // ignore
     }
+    try {
+      console.log('[webrtcService] pc.senders after setRemoteDescription', pc.getSenders().map(s=>({id:s.track?.id,kind:s.track?.kind})));
+    } catch {}
   }
 
   async function handleIce(fromUserId: number, candidate: RTCIceCandidateInit) {
+    // candidate.candidate is optional on RTCIceCandidateInit; stringify safely without using `any`
+    const candPreview = String(candidate.candidate ?? '').slice(0, 200);
+    console.log('[webrtcService] handleIce from', fromUserId, 'cand=', candPreview);
     const pc = peers.get(fromUserId);
-    if (!pc) return;
+    if (!pc) {
+      console.warn('[webrtcService] handleIce: no pc for', fromUserId);
+      return;
+    }
     try {
       await pc.addIceCandidate(candidate);
-    } catch {
-      // ignore
+      console.log('[webrtcService] added ICE candidate for', fromUserId);
+    } catch (err) {
+      console.warn('[webrtcService] addIceCandidate failed for', fromUserId, err);
     }
   }
 

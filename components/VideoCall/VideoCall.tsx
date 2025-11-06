@@ -5,7 +5,8 @@ import { useRoomSocket } from "@/lib/hooks/useRoomSocket";
 import { createPeerManager, type PeerManager } from "@/lib/webrtcService";
 
 export default function VideoCall() {
-  const { socketRef, userId } = useRoomSocket();
+  const { socketRef, userId, roomId } = useRoomSocket();
+  const registerRetryRef = useRef(0);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
@@ -14,6 +15,8 @@ export default function VideoCall() {
   const [remoteStreams, setRemoteStreams] = useState<Record<number, MediaStream>>({});
   const managerRef = useRef<PeerManager | null>(null);
   const remoteVideoRefs = useRef<Record<number, HTMLVideoElement | null>>({});
+  // track ongoing play() promises to avoid concurrent play() calls which cause AbortError
+  const remotePlayPromises = useRef<WeakMap<HTMLVideoElement, Promise<void>>>(new WeakMap());
   // monitors for remote audio activity to avoid feedback/echo
   const remoteAudioMonitors = useRef<Record<number, {
     ctx: AudioContext;
@@ -26,6 +29,12 @@ export default function VideoCall() {
   const callingRef = useRef<boolean>(false);
   const [registered, setRegistered] = useState(false);
   const [autoMuted, setAutoMuted] = useState(false); // true when auto-muting mic due to remote audio
+  const [remoteAudioEnabled, setRemoteAudioEnabled] = useState(false);
+  const remoteAudioEnabledRef = useRef<boolean>(remoteAudioEnabled);
+
+  useEffect(() => {
+    remoteAudioEnabledRef.current = remoteAudioEnabled;
+  }, [remoteAudioEnabled]);
 
   useEffect(() => {
     (async () => {
@@ -48,6 +57,27 @@ export default function VideoCall() {
     })();
   }, []);
 
+  function attemptPlay(el: HTMLVideoElement | null) {
+    if (!el) return;
+    try {
+      const map = remotePlayPromises.current;
+      if (map.has(el)) return; // already trying to play
+      const p = el.play();
+      if (p && typeof p.then === 'function') {
+        map.set(el, p as Promise<void>);
+        p.then(() => {
+          try { map.delete(el); } catch {}
+        }).catch((err) => {
+          try { map.delete(el); } catch {}
+          // Log common play errors; do not rethrow
+          console.warn('[VideoCall] video.play() failed or was interrupted', err);
+        });
+      }
+    } catch (err) {
+      console.warn('[VideoCall] attemptPlay error', err);
+    }
+  }
+
   // keep ref in sync with state
   useEffect(() => {
     localStreamRef.current = localStream;
@@ -64,9 +94,20 @@ export default function VideoCall() {
 
     const manager = createPeerManager(socketRef, userId ? Number(userId) : undefined, {
       onTrack: (stream, peerId) => {
+        try { console.log('[VideoCall] onTrack from', peerId, 'tracks', stream.getTracks().map(t=>({kind:t.kind,id:t.id,enabled:t.enabled}))); } catch {}
         setRemoteStreams((prev) => ({ ...prev, [peerId]: stream }));
         const el = remoteVideoRefs.current[peerId];
-        if (el) el.srcObject = stream;
+        if (el) {
+          try {
+            // only set srcObject if it changed to avoid triggering load interruptions
+            if (el.srcObject !== stream) el.srcObject = stream;
+            try { el.muted = !remoteAudioEnabledRef.current; } catch {}
+            // try to play if user enabled audio and we're not already trying
+            if (remoteAudioEnabledRef.current) attemptPlay(el);
+          } catch (e) {
+            console.warn('[VideoCall] failed to attach stream to element', e);
+          }
+        }
         // start monitoring remote audio to reduce echo by auto-muting local mic while others speak
         try {
           startRemoteAudioMonitor(peerId, stream);
@@ -98,6 +139,35 @@ export default function VideoCall() {
       }
 
       if (type === "error") {
+        const message = typeof msg.message === 'string' ? msg.message : String(msg.message ?? msg);
+        console.error('[VideoCall] server error:', message);
+        // If server says client not registered, attempt to re-register (helps with races)
+        if (message.includes('Client not registered')) {
+          try {
+            const sock = socketRef.current;
+            if (sock && sock.readyState === WebSocket.OPEN && roomId && userId) {
+              if (registerRetryRef.current < 3) {
+                registerRetryRef.current += 1;
+                console.log('[VideoCall] re-sending register attempt', registerRetryRef.current);
+                sock.send(JSON.stringify({ type: 'register', roomId, userId }));
+                // after re-registering, ask for user list again to re-initiate calls
+                setTimeout(() => {
+                  try {
+                    if (sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ type: 'request-user-list' }));
+                  } catch (e) { console.warn('[VideoCall] failed to request user-list after re-register', e); }
+                }, 250);
+              } else {
+                console.warn('[VideoCall] exceeded register retry attempts');
+              }
+            }
+          } catch (err) {
+            console.warn('[VideoCall] re-register failed', err);
+          }
+        }
+        return;
+      }
+
+      if (type === "error") {
         console.error('[VideoCall] server error:', msg.message ?? msg);
       }
 
@@ -124,7 +194,7 @@ export default function VideoCall() {
         const s = localStreamRef.current;
         for (const id of others) {
           try {
-            console.log('[VideoCall] initiating call to', id);
+            console.log('[VideoCall] initiating call to', id, 'with local tracks', s ? s.getTracks().map(t=>({kind:t.kind,id:t.id,enabled:t.enabled})) : []);
             manager.callUser(id, s || undefined);
           } catch (err) {
             console.warn('callUser failed', id, err);
@@ -252,6 +322,9 @@ export default function VideoCall() {
 
         s.getVideoTracks().forEach((t) => (t.enabled = true));
         s.getAudioTracks().forEach((t) => (t.enabled = true));
+        try {
+          console.log('[VideoCall] local stream tracks', s.getTracks().map(t => ({ kind: t.kind, id: t.id, enabled: t.enabled })));
+        } catch (e) { console.warn('[VideoCall] failed to log local tracks', e); }
         setCameraOn(true);
         setMicOn(true);
 
@@ -302,7 +375,62 @@ export default function VideoCall() {
     const newState = !micOn;
     setMicOn(newState);
     applyEffectiveMicState(newState, autoMuted, localStream);
+    try {
+      console.log('[VideoCall] toggleMic ->', newState, 'local audio tracks', localStream.getAudioTracks().map(t=>({id:t.id,enabled:t.enabled})));
+    } catch (e) { console.warn('[VideoCall] toggleMic log failed', e); }
   };
+
+    // Enable remote audio playback via a user gesture (bypasses autoplay restrictions)
+    const toggleRemoteAudio = () => {
+      const newState = !remoteAudioEnabled;
+      setRemoteAudioEnabled(newState);
+    };
+
+    // When remoteAudioEnabled changes, update all remote video elements
+    useEffect(() => {
+      for (const idStr of Object.keys(remoteVideoRefs.current)) {
+        const el = remoteVideoRefs.current[Number(idStr)];
+        if (!el) continue;
+        try {
+          el.muted = !remoteAudioEnabled;
+          if (remoteAudioEnabled) {
+            // try to play; browsers often require a user gesture to allow audio
+            attemptPlay(el);
+          }
+        } catch (e) {
+          console.warn('[VideoCall] failed to update remote video audio state', e);
+        }
+      }
+    }, [remoteAudioEnabled]);
+
+    // Ensure remote streams are attached to their video elements (covers cases where onTrack ran
+    // before the element ref was mounted). This will re-attach srcObject when a stream appears.
+    useEffect(() => {
+      for (const k of Object.keys(remoteStreams)) {
+        const id = Number(k);
+        const stream = remoteStreams[id];
+        const el = remoteVideoRefs.current[id];
+        if (!stream) continue;
+        if (el) {
+          try {
+            if (el.srcObject !== stream) {
+              console.log('[VideoCall] attaching remote stream to element for', id);
+              el.srcObject = stream;
+            }
+            try { el.muted = !remoteAudioEnabledRef.current; } catch {}
+            // log some state useful for debugging
+            try { console.log('[VideoCall] video element readyState', id, el.readyState, 'videoWidth/Height', el.videoWidth, el.videoHeight); } catch {}
+            // attempt to play if allowed
+            if (remoteAudioEnabledRef.current) attemptPlay(el);
+          } catch (err) {
+            console.warn('[VideoCall] failed to attach stream in remoteStreams effect', id, err);
+          }
+        } else {
+          // element not yet mounted; will be attached in ref callback later
+          console.log('[VideoCall] remote element not mounted yet for', id);
+        }
+      }
+    }, [remoteStreams]);
 
   return (
     <div className="p-2 bg-slate-800 rounded">
@@ -323,10 +451,40 @@ export default function VideoCall() {
         >
           {micOn ? "Mic On" : "Mic Off"}
         </button>
+        <button
+          onClick={toggleRemoteAudio}
+          className={`px-3 py-2 rounded-md font-medium ${
+            remoteAudioEnabled ? "bg-green-500" : "bg-black"
+          } text-white`}
+        >
+          {remoteAudioEnabled ? "Audio Enabled" : "Enable Audio"}
+        </button>
         <div className="px-3 py-2 rounded-md font-semibold text-white bg-slate-700 flex items-center gap-2">
           <span className={`inline-block w-2 h-2 rounded-full ${cameraOn ? 'bg-green-400' : 'bg-red-500'}`} />
           <span className="text-sm">{cameraOn ? 'Streaming' : 'Not streaming'}</span>
         </div>
+      </div>
+
+      {/* Debug panel: shows remoteStreams & video element state for troubleshooting */}
+      <div className="mb-2">
+        <details className="text-xs text-slate-300">
+          <summary className="cursor-pointer">Debug: remote streams</summary>
+          <pre className="text-xs text-slate-200 max-h-40 overflow-auto p-2 bg-slate-900 rounded">
+            {JSON.stringify(
+              Object.keys(remoteStreams).map((k) => {
+                const s = remoteStreams[Number(k)];
+                return {
+                  peerId: Number(k),
+                  tracks: s ? s.getTracks().map((t) => ({ kind: t.kind, id: t.id, enabled: t.enabled })) : [],
+                  videoElementPresent: !!remoteVideoRefs.current[Number(k)],
+                  videoElementMuted: remoteVideoRefs.current[Number(k)] ? !!remoteVideoRefs.current[Number(k)]!.muted : null,
+                };
+              }),
+              null,
+              2
+            )}
+          </pre>
+        </details>
       </div>
 
       <div className="grid grid-cols-2 gap-2 items-start">
@@ -375,7 +533,13 @@ export default function VideoCall() {
                       ref={(el) => {
                         remoteVideoRefs.current[id] = el;
                         if (el && stream) {
-                          el.srcObject = stream;
+                          try {
+                            if (el.srcObject !== stream) el.srcObject = stream;
+                            try { el.muted = !remoteAudioEnabledRef.current; } catch {}
+                            if (remoteAudioEnabledRef.current) attemptPlay(el);
+                          } catch (e) {
+                            console.warn('[VideoCall] failed to attach stream in ref', e);
+                          }
                         }
                       }}
                     />
