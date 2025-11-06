@@ -7,6 +7,8 @@ import Messages from "./comt/message-room/messages";
 import VideoCall from "@/components/VideoCall";
 import { RoomSocketProvider } from "@/lib/hooks/useRoomSocket";
 import { motion, AnimatePresence } from "framer-motion";
+import PageLoader from "@/components/PageLoader";
+import ButtonWithLoader from "@/components/ButtonWithLoader";
 
 export default function RoomClient({
   roomName,
@@ -17,25 +19,52 @@ export default function RoomClient({
 }) {
   const [showVideoCall, setShowVideoCall] = useState(false);
   const [showMessages, setShowMessages] = useState(false);
+  const [showRoomLoader, setShowRoomLoader] = useState(true);
+  const [showMessagesLoading, setShowMessagesLoading] = useState(false);
 
   return (
     <RoomSocketProvider roomName={roomName} userId={userId}>
+      {/* Quick room loader on mount for fast-paced connect feedback */}
+      {showRoomLoader && (
+        <PageLoader
+          variant="room"
+          line={`Joining ${roomName} — connecting peers`}
+          onFinish={() => setShowRoomLoader(false)}
+        />
+      )}
+
       <DrawApp />
 
       {/* Floating Toggle Buttons */}
-      <button
+      <ButtonWithLoader
         onClick={() => setShowVideoCall((prev) => !prev)}
         className="fixed top-4 right-4 z-50 bg-white/90 text-black px-3 py-2 rounded-md shadow md:px-4"
       >
         Video
-      </button>
+      </ButtonWithLoader>
 
-      <button
-        onClick={() => setShowMessages((prev) => !prev)}
+      <ButtonWithLoader
+        onClick={() => {
+          // if already showing, just close; otherwise fire a fast message loader then open
+          if (showMessages) return setShowMessages(false);
+          setShowMessagesLoading(true);
+        }}
         className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-white/90 text-black px-4 py-2 rounded-md shadow md:left-4 md:translate-x-0"
       >
         Chat
-      </button>
+      </ButtonWithLoader>
+
+      {/* show a quick message loader when the user requests the chat panel */}
+      {showMessagesLoading && (
+        <PageLoader
+          variant="message"
+          line="Warming up the conversation — just a second"
+          onFinish={() => {
+            setShowMessagesLoading(false);
+            setShowMessages(true);
+          }}
+        />
+      )}
 
       {/* Backdrop overlay when any panel is open */}
       <AnimatePresence>

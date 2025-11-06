@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { motion } from "framer-motion";
+import Loader from "@/components/Loader";
+import ButtonWithLoader from "@/components/ButtonWithLoader";
+import PageLoader from "@/components/PageLoader";
 
 export default function RegisterPage() {
   const [email, setEmail] = useState("");
@@ -14,9 +18,14 @@ export default function RegisterPage() {
   const [message, setMessage] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string; name?: string }>({});
 
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [registering, setRegistering] = useState(false);
+
   const router = useRouter();
 
   const handleSendOtp = async () => {
+    setSendingOtp(true);
     try {
       const res = await fetch("/api/sendotp", {
         method: "POST",
@@ -42,10 +51,13 @@ export default function RegisterPage() {
     } catch (err) {
       console.error("Network error:", err);
       setMessage("❌ Network error: Please check your connection");
+    } finally {
+      setSendingOtp(false);
     }
   };
 
   const handleVerifyOtp = async () => {
+    setVerifyingOtp(true);
     try {
       const res = await fetch("/api/verify-otp", {
         method: "POST",
@@ -63,6 +75,8 @@ export default function RegisterPage() {
     } catch (err) {
       console.error(err);
       setMessage("❌ Error verifying OTP");
+    } finally {
+      setVerifyingOtp(false);
     }
   };
 
@@ -73,6 +87,7 @@ export default function RegisterPage() {
       return;
     }
 
+    setRegistering(true);
     try {
       const res = await fetch("/api/register", {
         method: "POST",
@@ -83,7 +98,7 @@ export default function RegisterPage() {
       const data = await res.json();
       if (res.ok) {
         setMessage("✅ Registration successful! Redirecting...");
-        setTimeout(() => router.push("/login"), 2000);
+        setTimeout(() => router.push("/login"), 1500);
       } else {
         setFieldErrors({
           email: data.errors?.email?.[0],
@@ -95,16 +110,48 @@ export default function RegisterPage() {
     } catch (err) {
       console.error(err);
       setMessage("❌ Something went wrong");
+    } finally {
+      setRegistering(false);
     }
   };
 
+  const [loaderFinished, setLoaderFinished] = useState(false);
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white font-sans">
-      <form
+    <div className="min-h-screen flex items-center justify-center text-white px-4">
+      {!loaderFinished && (
+        <PageLoader
+          variant="register"
+          line="Verifying your email — preparing your creative workspace"
+          duration={3000}
+          onFinish={() => setLoaderFinished(true)}
+        />
+      )}
+
+      <motion.div
+        className="fixed inset-0 z-0 bg-cover bg-center bg-no-repeat"
+        style={{ backgroundImage: "url('/backgrond.png')" }}
+        aria-hidden
+      />
+      <div className="fixed inset-0 z-0 bg-black/60" />
+
+      <motion.form
         onSubmit={handleRegister}
-        className="bg-slate-800 p-8 rounded-xl shadow-xl w-full max-w-md flex flex-col gap-6"
+        initial={loaderFinished ? { opacity: 0, scale: 0.8, x: 0, y: 20 } : { opacity: 0, scale: 0.4, x: 120, y: 80 }}
+        animate={loaderFinished ? { opacity: 1, scale: 1, x: 0, y: 0 } : {}}
+        transition={{ type: "spring", stiffness: 160, damping: 18, duration: 0.8 }}
+        className="relative overflow-hidden w-full max-w-md p-8 rounded-3xl shadow-2xl flex flex-col gap-6 z-20"
+        style={{
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02))',
+          border: '1px solid rgba(255,255,255,0.06)',
+          backdropFilter: 'blur(12px) saturate(120%)',
+          transformOrigin: 'right bottom',
+        }}
       >
-        <h2 className="text-2xl font-bold text-center text-blue-400">Create Account</h2>
+        <div className="absolute -top-20 -right-20 w-72 h-72 bg-gradient-to-br from-white/8 via-white/4 to-transparent blur-3xl opacity-20 transform -rotate-45 pointer-events-none" />
+        <h2 className="text-3xl font-extrabold text-center bg-clip-text text-transparent bg-gradient-to-r from-indigo-300 via-fuchsia-300 to-emerald-300" style={{ fontFamily: 'var(--font-great-vibes)' }}>
+          Create your account
+        </h2>
 
         <input
           type="email"
@@ -112,18 +159,19 @@ export default function RegisterPage() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          className="bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="bg-transparent text-white px-4 py-3 rounded-xl border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
         {fieldErrors.email && <p className="text-red-400 text-sm">{fieldErrors.email}</p>}
 
         {!otpSent && (
-          <button
+          <ButtonWithLoader
             type="button"
             onClick={handleSendOtp}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-500 transition duration-200"
+            loading={sendingOtp}
+            className="bg-indigo-600 text-white px-4 py-3 rounded-xl hover:bg-indigo-500 transition duration-200"
           >
             Verify Email
-          </button>
+          </ButtonWithLoader>
         )}
 
         {otpSent && !otpVerified && (
@@ -133,15 +181,16 @@ export default function RegisterPage() {
               placeholder="Enter OTP"
               value={otp}
               onChange={(e) => setOtp(e.target.value)}
-              className="bg-slate-700 text-white px-4 py-2 rounded-lg border border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="bg-transparent text-white px-4 py-3 rounded-xl border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
-            <button
+            <ButtonWithLoader
               type="button"
               onClick={handleVerifyOtp}
-              className="bg-yellow-600 text-white px-4 py-2 rounded-lg hover:bg-yellow-500 transition duration-200"
+              loading={verifyingOtp}
+              className="bg-gradient-to-r from-yellow-600 to-amber-500 text-white px-4 py-3 rounded-xl hover:from-yellow-500 hover:to-amber-400 transition duration-200"
             >
               Submit OTP
-            </button>
+            </ButtonWithLoader>
           </>
         )}
 
@@ -152,9 +201,9 @@ export default function RegisterPage() {
           onChange={(e) => setName(e.target.value)}
           required
           disabled={!otpVerified}
-          className={`bg-slate-700 text-white px-4 py-2 rounded-lg border ${
-            otpVerified ? "border-slate-600" : "border-slate-700 opacity-50"
-          } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+          className={`bg-transparent text-white px-4 py-3 rounded-xl border ${
+            otpVerified ? "border-white/10" : "border-white/10 opacity-50"
+          } focus:outline-none focus:ring-2 focus:ring-indigo-500`}
         />
         {fieldErrors.name && <p className="text-red-400 text-sm">{fieldErrors.name}</p>}
 
@@ -165,28 +214,29 @@ export default function RegisterPage() {
           onChange={(e) => setPassword(e.target.value)}
           required
           disabled={!otpVerified}
-          className={`bg-slate-700 text-white px-4 py-2 rounded-lg border ${
-            otpVerified ? "border-slate-600" : "border-slate-700 opacity-50"
-          } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+          className={`bg-transparent text-white px-4 py-3 rounded-xl border ${
+            otpVerified ? "border-white/10" : "border-white/10 opacity-50"
+          } focus:outline-none focus:ring-2 focus:ring-indigo-500`}
         />
         {fieldErrors.password && <p className="text-red-400 text-sm">{fieldErrors.password}</p>}
 
-        <button
+        <ButtonWithLoader
           type="submit"
-          className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-500 transition duration-200"
+          loading={registering}
+          className="bg-gradient-to-r from-emerald-600 to-teal-500 text-white px-4 py-3 rounded-xl hover:from-emerald-500 hover:to-teal-400 transition duration-200"
         >
           Register
-        </button>
+        </ButtonWithLoader>
 
         {message && <p className="text-center text-sm text-slate-300">{message}</p>}
 
         <p className="text-center text-sm text-slate-400">
-          Already have an account?{" "}
-          <a href="/login" className="text-blue-400 hover:underline">
+          Already have an account?{' '}
+          <a href="/login" className="text-indigo-300 hover:underline">
             Login
           </a>
         </p>
-      </form>
+      </motion.form>
     </div>
   );
 }
