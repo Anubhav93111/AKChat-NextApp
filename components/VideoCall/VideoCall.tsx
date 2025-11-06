@@ -491,17 +491,16 @@ export default function VideoCall() {
         <div className="flex flex-col gap-1">
           <div className="text-sm text-slate-300">You</div>
           <div
-            className={`w-full rounded-xl overflow-hidden flex items-center justify-center ${
+            className={`w-full rounded-xl overflow-hidden flex items-center justify-center video-card-220 ${
               localStream ? "border-4 border-green-500" : "border border-slate-600"
             }`}
-            style={{ height: 220 }}
           >
             <video
               ref={localVideoRef}
               autoPlay
               playsInline
               muted
-              style={{ width: "100%", height: "100%", backgroundColor: "black" }}
+              className="video-element"
             />
           </div>
         </div>
@@ -520,10 +519,9 @@ export default function VideoCall() {
               return (
                 <div
                   key={k}
-                  className={`w-full rounded-xl overflow-hidden border-4 ${
+                  className={`w-full rounded-xl overflow-hidden border-4 video-card-220 ${
                     hasVideo ? "border-red-600" : "border-slate-700"
                   }`}
-                  style={{ height: 220 }}
                 >
                   {hasVideo ? (
                     <video

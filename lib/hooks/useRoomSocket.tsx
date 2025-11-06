@@ -30,7 +30,7 @@ export function RoomSocketProvider({
     const connect = async () => {
       const res = await fetch("/api/getroomid", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({ name: roomName }),
       });
 

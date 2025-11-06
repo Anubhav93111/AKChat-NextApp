@@ -58,6 +58,14 @@ export default function Canvas({
   const [dragOffset, setDragOffset] = useState<{ dx: number; dy: number } | null>(null);
   const [originalElement, setOriginalElement] = useState<DrawingElement | null>(null);
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [remotePointers, setRemotePointers] = useState<Record<number, { x: number; y: number; name?: string; color: string; updatedAt: number }>>({});
+  const [roomLockedBy, setRoomLockedBy] = useState<number | null>(null);
+  const lastPointerEmitRef = useRef(0);
+  const [ownColor, setOwnColor] = useState<string>(() => {
+    // fallback random color until assigned uniquely
+    const hue = Math.floor(Math.random() * 360);
+    return `hsl(${hue}deg 80% 60%)`;
+  });
 
   const emit = (payload: Record<string, unknown>) => {
     if (wsRef.current?.readyState === WebSocket.OPEN && roomId && userId !== undefined) {
@@ -65,11 +73,22 @@ export default function Canvas({
     }
   };
 
+  // removed custom local cursor - use native cursor
+
   const getCanvasCoordinates = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return { x: 0, y: 0 };
     const x = (event.clientX - rect.left - pan.x) / zoom;
     const y = (event.clientY - rect.top - pan.y) / zoom;
+    return { x, y };
+  };
+
+  // accept any object that has clientX/clientY to support React.Touch
+  const getTouchCanvasCoordinates = (touch: { clientX: number; clientY: number }) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    const x = (touch.clientX - rect.left - pan.x) / zoom;
+    const y = (touch.clientY - rect.top - pan.y) / zoom;
     return { x, y };
   };
 
@@ -160,10 +179,20 @@ export default function Canvas({
   const handleMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const { x, y } = getCanvasCoordinates(event);
 
+    // if another client has locked the room, prevent local drawing/moving
+    if (roomLockedBy && roomLockedBy !== userId) return;
+
     if (mode === "draw") {
+      // announce lock to other clients so they cannot draw while we are streaming
+      try { emit({ type: "lock" }); } catch {}
+
       setDrawing(true);
       const element = createElement(x, y, x, y, elementType, strokeColor, strokeWidth);
       updateElements([...elements, element]);
+      // broadcast that a new stream (start) has begun - index is last
+      const index = elements.length;
+      emit({ type: "stream", element, index, color: ownColor });
+      // native cursor will be used; no custom local cursor update
     }
 
     if (mode === "move") {
@@ -179,8 +208,19 @@ export default function Canvas({
 
   const handleMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const { x, y } = getCanvasCoordinates(event);
+    // emit pointer positions at most every 50ms
+    try {
+      const now = Date.now();
+      if (now - lastPointerEmitRef.current > 50) {
+        lastPointerEmitRef.current = now;
+        emit({ type: "pointer", x, y, color: ownColor });
+      }
+    } catch {}
+    // native cursor will be used; no custom local cursor update
+  // if another client locked the room, don't update local drawing
+  if (roomLockedBy && roomLockedBy !== userId) return;
 
-    if (drawing && mode === "draw") {
+  if (drawing && mode === "draw") {
       const index = elements.length - 1;
       const el = elements[index];
       if (!el) return;
@@ -257,7 +297,8 @@ export default function Canvas({
       elementsCopy[index] = updated;
       setElements(elementsCopy);
 
-      emit({ type: "stream", element: updated, index });
+      // while drawing stream, broadcast incremental stream updates so others can preview
+      emit({ type: "stream", element: updated, index, color: ownColor });
     }
 
     if (mode === "move" && movingElementIndex !== null && dragOffset && originalElement) {
@@ -311,7 +352,10 @@ export default function Canvas({
     if (mode === "draw") {
       const finalizedElement = elements[elements.length - 1];
       if (finalizedElement) {
+        // send finalized drawing only on mouse up
         emit({ type: "draw", element: finalizedElement });
+        // release the lock so other clients can draw
+        try { emit({ type: "unlock" }); } catch {}
       }
     }
   };
@@ -376,10 +420,38 @@ export default function Canvas({
 
     el.addEventListener("wheel", wheelHandler, { passive: false });
 
+    // add native touch listeners with passive: false so preventDefault works
+    const touchPreventer = (e: TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+    };
+    el.addEventListener("touchstart", touchPreventer, { passive: false });
+    el.addEventListener("touchmove", touchPreventer, { passive: false });
+    el.addEventListener("touchend", touchPreventer, { passive: false });
+
     return () => {
       el.removeEventListener("wheel", wheelHandler);
+      el.removeEventListener("touchstart", touchPreventer as EventListener);
+      el.removeEventListener("touchmove", touchPreventer as EventListener);
+      el.removeEventListener("touchend", touchPreventer as EventListener);
     };
   }, [zoom, pan, setZoom]);
+
+  // keep overlay canvas cursor in sync with mode/elementType by directly setting DOM style
+  useEffect(() => {
+    const el = overlayCanvasRef.current;
+    if (!el) return;
+    const cursor =
+      mode === "move"
+        ? "grab"
+        : mode === "delete"
+        ? "pointer"
+        : elementType === "text"
+        ? "text"
+        : "crosshair";
+    try {
+      el.style.cursor = cursor;
+    } catch {}
+  }, [mode, elementType]);
 
   const handleCanvasClick = (event: React.MouseEvent<HTMLCanvasElement>) => {
     const { x, y } = getCanvasCoordinates(event);
@@ -408,6 +480,141 @@ export default function Canvas({
         const updated = elements.filter((_, i) => i !== hitIndex);
         updateElements(updated);
         emit({ type: "delete", index: hitIndex });
+      }
+    }
+  };
+
+  // --- Touch handling (single-finger draw/click, two-finger pinch zoom) ---
+  const lastTouch = useRef<{ time: number; x: number; y: number } | null>(null);
+  const pinchState = useRef<{ initialDistance: number; initialZoom: number } | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      const { x, y } = getTouchCanvasCoordinates(t);
+      // treat as mousedown for single touch
+      // announce lock to other clients so they cannot draw while we are streaming
+      try { emit({ type: 'lock' }); } catch {}
+      setDrawing(true);
+      const element = createElement(x, y, x, y, elementType, strokeColor, strokeWidth);
+      updateElements([...elements, element]);
+      const index = elements.length;
+      emit({ type: 'stream', element, index, color: ownColor });
+      // native cursor will be used; no custom local cursor update
+      lastTouch.current = { time: Date.now(), x: t.clientX, y: t.clientY };
+    }
+    if (e.touches.length === 2) {
+      // start pinch
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const dx = t1.clientX - t0.clientX;
+      const dy = t1.clientY - t0.clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      pinchState.current = { initialDistance: dist, initialZoom: zoom };
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 1 && drawing && mode === 'draw') {
+      const t = e.touches[0];
+      const { x, y } = getTouchCanvasCoordinates(t);
+
+      // emit pointer positions at most every 50ms for touch as well
+      try {
+        const now = Date.now();
+        if (now - lastPointerEmitRef.current > 50) {
+          lastPointerEmitRef.current = now;
+          emit({ type: 'pointer', x, y, color: ownColor });
+        }
+      } catch {}
+
+      // native cursor will be used; no custom local cursor update
+
+      const index = elements.length - 1;
+      const el = elements[index];
+      if (!el) return;
+
+      if (el.type === 'pencil') {
+        const newPoints: [number, number][] = [...(el.points || []), [x, y]];
+        const roughElement = generator.linearPath(newPoints, {
+          stroke: el.strokeColor || '#ffffff',
+          strokeWidth: el.strokeWidth || 2,
+        });
+
+        const updated = { ...el, points: newPoints, x2: x, y2: y, roughElement };
+        const elementsCopy = [...elements];
+        elementsCopy[index] = updated;
+        setElements(elementsCopy);
+      } else {
+        // non-pencil shapes
+        // replicate mousemove behaviour but without streaming
+        const options = {
+          stroke: el.strokeColor || '#ffffff',
+          strokeWidth: el.strokeWidth || 2,
+          ...(el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond'
+            ? { fill: '#ae1c65ff', fillStyle: 'solid' }
+            : {}),
+        };
+
+        let roughElement;
+        switch (el.type) {
+          case 'line':
+            roughElement = generator.line(el.x1, el.y1, x, y, options);
+            break;
+          case 'rectangle':
+            roughElement = generator.rectangle(el.x1, el.y1, x - el.x1, y - el.y1, options);
+            break;
+          case 'ellipse':
+            roughElement = generator.ellipse((el.x1 + x) / 2, (el.y1 + y) / 2, Math.abs(x - el.x1), Math.abs(y - el.y1), options);
+            break;
+          case 'diamond':
+            const midX = (el.x1 + x) / 2;
+            const midY = (el.y1 + y) / 2;
+            const diamondPoints = [[midX, el.y1], [x, midY], [midX, y], [el.x1, midY]] as Point[];
+            roughElement = generator.polygon(diamondPoints, options);
+            break;
+          default:
+            roughElement = null;
+        }
+
+        const updated = { ...el, x2: x, y2: y, roughElement };
+        const elementsCopy = [...elements];
+        elementsCopy[index] = updated;
+        setElements(elementsCopy);
+      }
+    }
+
+    if (e.touches.length === 2 && pinchState.current && setZoom) {
+      const t0 = e.touches[0];
+      const t1 = e.touches[1];
+      const dx = t1.clientX - t0.clientX;
+      const dy = t1.clientY - t0.clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const factor = dist / pinchState.current.initialDistance;
+      const newZoom = Math.min(5, Math.max(0.2, pinchState.current.initialZoom * factor));
+      setZoom(newZoom);
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 0) {
+      // ended all touches -> treat as mouse up
+      setDrawing(false);
+      const finalizedElement = elements[elements.length - 1];
+      if (mode === 'draw' && finalizedElement) {
+        emit({ type: 'draw', element: finalizedElement });
+        try { emit({ type: 'unlock' }); } catch {}
+      }
+      pinchState.current = null;
+      // detect tap (short duration & small movement) to fire click
+      if (lastTouch.current) {
+        const dt = Date.now() - lastTouch.current.time;
+        if (dt < 300) {
+          // trigger click at that location
+          const fakeEvent = { clientX: lastTouch.current.x, clientY: lastTouch.current.y } as unknown as React.MouseEvent<HTMLCanvasElement>;
+          handleCanvasClick(fakeEvent);
+        }
+        lastTouch.current = null;
       }
     }
   };
@@ -455,31 +662,126 @@ export default function Canvas({
     };
   }, []);
 
+  // color generator for pointer badges
+  const colorForId = (id: number) => {
+    const hue = (id * 137.5) % 360; // golden angle-ish distribution
+    return `hsl(${hue}deg 80% 60%)`;
+  };
+
+  // generate a random HSL color; optional seeded variant
+  const generateRandomColor = (seed?: number) => {
+    if (typeof seed === "number") {
+      const hue = Math.floor((seed * 137.5) % 360);
+      return `hsl(${hue}deg 80% 60%)`;
+    }
+    const hue = Math.floor(Math.random() * 360);
+    return `hsl(${hue}deg 80% 60%)`;
+  };
+
+  // pick a color not currently used by remote pointers
+  const assignUniqueColor = () => {
+    const used = new Set(Object.values(remotePointers).map((p) => p.color));
+    let attempts = 0;
+    let color = generateRandomColor(userId);
+    while (used.has(color) && attempts < 50) {
+      color = generateRandomColor();
+      attempts++;
+    }
+    setOwnColor(color);
+    try {
+      emit({ type: "color", color });
+    } catch {}
+  };
+
+  // listen for pointer messages from websocket
+  useEffect(() => {
+    const ws = wsRef.current;
+    if (!ws) return;
+
+    const handler = (ev: MessageEvent) => {
+      try {
+          const msg = JSON.parse(ev.data as string);
+          // handle drawing sync/stream/init and lock/unlock messages
+          if (msg.type === 'sync' && Array.isArray(msg.shapes)) {
+            // server authoritative sync of all shapes
+            setElements(msg.shapes as DrawingElement[]);
+            return;
+          }
+          if (msg.type === 'init' && Array.isArray(msg.shapes)) {
+            setElements(msg.shapes as DrawingElement[]);
+            return;
+          }
+          if (msg.type === 'stream' && typeof msg.index === 'number' && msg.element) {
+            // ignore our own streams
+            if (msg.userId === userId) return;
+            updateElements((prev) => {
+              const copy = [...prev];
+              copy[msg.index] = msg.element as DrawingElement;
+              return copy;
+            });
+            return;
+          }
+          if (msg.type === 'lock') {
+            // someone locked the room — prevent drawing locally
+            setRoomLockedBy(typeof msg.lockedBy === 'number' ? msg.lockedBy : null);
+            return;
+          }
+          if (msg.type === 'unlock') {
+            setRoomLockedBy(null);
+            return;
+          }
+          if (msg.type === "pointer" && typeof msg.x === "number" && typeof msg.y === "number" && msg.userId !== undefined) {
+            const id = Number(msg.userId);
+            setRemotePointers((prev) => ({
+              ...prev,
+              [id]: {
+                x: msg.x as number,
+                y: msg.y as number,
+                name: (msg.name as string) || undefined,
+                color: (msg.color as string) || prev[id]?.color || colorForId(id),
+                updatedAt: Date.now(),
+              },
+            }));
+          }
+          if (msg.type === 'color' && msg.userId !== undefined && typeof msg.color === 'string') {
+            const id = Number(msg.userId);
+            setRemotePointers((prev) => ({
+              ...prev,
+              [id]: {
+                x: prev[id]?.x ?? 0,
+                y: prev[id]?.y ?? 0,
+                name: prev[id]?.name,
+                color: msg.color as string,
+                updatedAt: Date.now(),
+              },
+            }));
+          }
+      } catch (e) {
+        // ignore non-json messages
+      }
+    };
+
+    ws.addEventListener("message", handler);
+    return () => ws.removeEventListener("message", handler);
+  }, [wsRef, updateElements, userId]);
+
+  // assign a unique color on mount and whenever remotePointers change cause a conflict
+  useEffect(() => {
+    assignUniqueColor();
+    // if remotePointers later contains our color, reassign
+  }, []);
+
+  useEffect(() => {
+    if (!ownColor) return;
+    const conflict = Object.values(remotePointers).some((p) => p.color === ownColor);
+    if (conflict) {
+      assignUniqueColor();
+    }
+  }, [remotePointers]);
+
   return (
-    <div
-      ref={containerRef}
-      style={{
-        position: "fixed",
-        top: 0,
-        left: 0,
-        width: "100vw",
-        height: "100vh",
-        background: "black",
-        overflow: "hidden",
-        zIndex: 0,
-      }}
-    >
-      <canvas
-        ref={gridCanvasRef}
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          zIndex: 1,
-        }}
-      />
+    <div ref={containerRef} className="app-container">
+      <canvas ref={gridCanvasRef} className="full-canvas" />
 
       <CanvasElement
         elements={elements}
@@ -494,26 +796,67 @@ export default function Canvas({
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
-        onWheel={handleWheel}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         onClick={handleCanvasClick}
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-          cursor:
-            mode === "move"
-              ? "grab"
-              : mode === "delete"
-              ? "pointer"
-              : elementType === "text"
-              ? "text"
-              : "crosshair",
-          zIndex: 2,
-          touchAction: "none",
-        }}
+        className="overlay-canvas"
       />
+
+        {/* ensure overlay canvas cursor matches current mode even if external CSS interferes */}
+        <>
+          {/** update DOM cursor style directly to override potential external cursors **/}
+          {null}
+        </>
+
+      {/* remote pointers overlay */}
+      {Object.entries(remotePointers).map(([id, p]) => {
+        const pid = Number(id);
+        // don't render our own pointer here; we'll render our local cursor separately
+        if (pid === userId) return null;
+        const screenX = p.x * zoom + pan.x;
+        const screenY = p.y * zoom + pan.y;
+        return (
+          <div
+            key={pid}
+            style={{
+              position: "absolute",
+              left: `${screenX}px`,
+              top: `${screenY}px`,
+              transform: "translate(-50%, -120%)",
+              pointerEvents: "none",
+              zIndex: 3,
+            }}
+          >
+            <div
+              style={{
+                width: 12,
+                height: 12,
+                borderRadius: 6,
+                background: p.color,
+                boxShadow: "0 0 6px rgba(0,0,0,0.6)",
+              }}
+            />
+            {p.name ? (
+              <div
+                style={{
+                  marginTop: 6,
+                  padding: "2px 6px",
+                  background: "rgba(0,0,0,0.6)",
+                  color: "white",
+                  borderRadius: 6,
+                  fontSize: 12,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {p.name}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+
+      {/* native cursor is used for local user; no custom local cursor rendered */}
 
       <CanvasTextEditor
         editingIndex={editingIndex}

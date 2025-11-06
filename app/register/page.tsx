@@ -20,7 +20,7 @@ export default function RegisterPage() {
     try {
       const res = await fetch("/api/sendotp", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({ email }),
       });
 
@@ -49,7 +49,7 @@ export default function RegisterPage() {
     try {
       const res = await fetch("/api/verify-otp", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({ email, otp }),
       });
 
@@ -76,7 +76,7 @@ export default function RegisterPage() {
     try {
       const res = await fetch("/api/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({ name, email, password }),
       });
 

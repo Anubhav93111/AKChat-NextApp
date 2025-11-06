@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Great+Vibes&display=swap');
 
+/* Compatibility: add the unprefixed property so modern Chrome/Edge/Firefox honor it */
+html, :root {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -20,11 +26,75 @@
   /* margin: 0; */
   /* padding: 0; */
   box-sizing: border-box;
-  cursor: url('/brush4.cur'), auto; /* Hide native cursor */
 }
 
 body {
   font-family: var(--font-sans), 'Inter', sans-serif;
   background-color: #0f172a;
   color: #f1f5f9;
+}
+
+/* App specific helpers used by components to avoid inline CSS */
+.app-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: black;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.full-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+}
+
+.overlay-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  z-index: 2;
+}
+
+.pointer-badge {
+  position: absolute;
+  transform: translate(-50%, -120%);
+  pointer-events: none;
+  z-index: 3;
+}
+
+.pointer-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 6px;
+  box-shadow: 0 0 6px rgba(0,0,0,0.6);
+}
+
+.pointer-label {
+  margin-top: 6px;
+  padding: 2px 6px;
+  background: rgba(0,0,0,0.6);
+  color: white;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.video-card-220 {
+  height: 220px;
+}
+
+.video-element {
+  width: 100%;
+  height: 100%;
+  background-color: black;
 }

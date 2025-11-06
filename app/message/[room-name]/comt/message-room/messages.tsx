@@ -24,7 +24,7 @@ export default function Messages() {
     const fetchChatHistory = async () => {
       const res = await fetch("/api/getchats", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json; charset=utf-8" },
         body: JSON.stringify({ roomId }),
       });
       const data = await res.json();
