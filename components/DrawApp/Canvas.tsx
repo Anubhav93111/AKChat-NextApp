@@ -489,22 +489,29 @@ export default function Canvas({
   const pinchState = useRef<{ initialDistance: number; initialZoom: number } | null>(null);
 
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    // If this is a touch-capable device, we disable single-finger drawing to avoid accidental marks.
     if (e.touches.length === 1) {
       const t = e.touches[0];
+      // still record lastTouch for tap detection (so clicks still work), but don't start drawing on single-touch
+      lastTouch.current = { time: Date.now(), x: t.clientX, y: t.clientY };
+      if (isTouchDeviceRef.current) {
+        // intentionally skip starting a drawing session on mobile single-touch
+        return;
+      }
+
+      // non-touch or desktop touch events (rare) may proceed to drawing
       const { x, y } = getTouchCanvasCoordinates(t);
-      // treat as mousedown for single touch
-      // announce lock to other clients so they cannot draw while we are streaming
       try { emit({ type: 'lock' }); } catch {}
       setDrawing(true);
       const element = createElement(x, y, x, y, elementType, strokeColor, strokeWidth);
       updateElements([...elements, element]);
       const index = elements.length;
       emit({ type: 'stream', element, index, color: ownColor });
-      // native cursor will be used; no custom local cursor update
-      lastTouch.current = { time: Date.now(), x: t.clientX, y: t.clientY };
+      return;
     }
+
     if (e.touches.length === 2) {
-      // start pinch
+      // start pinch (two-finger zoom) - keep this behavior
       const t0 = e.touches[0];
       const t1 = e.touches[1];
       const dx = t1.clientX - t0.clientX;
@@ -515,11 +522,26 @@ export default function Canvas({
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    // Skip single-finger touch drawing on touch devices
+    if (e.touches.length === 1 && isTouchDeviceRef.current) {
+      // allow pointer updates for remote cursors (optional) but do not mutate drawings
+      const t = e.touches[0];
+      try {
+        const now = Date.now();
+        const { x, y } = getTouchCanvasCoordinates(t);
+        if (now - lastPointerEmitRef.current > 50) {
+          lastPointerEmitRef.current = now;
+          emit({ type: 'pointer', x, y, color: ownColor });
+        }
+      } catch {}
+      return;
+    }
+
     if (e.touches.length === 1 && drawing && mode === 'draw') {
+      // non-touch-device drawing (desktop touch or stylus) proceeds
       const t = e.touches[0];
       const { x, y } = getTouchCanvasCoordinates(t);
 
-      // emit pointer positions at most every 50ms for touch as well
       try {
         const now = Date.now();
         if (now - lastPointerEmitRef.current > 50) {
@@ -527,8 +549,6 @@ export default function Canvas({
           emit({ type: 'pointer', x, y, color: ownColor });
         }
       } catch {}
-
-      // native cursor will be used; no custom local cursor update
 
       const index = elements.length - 1;
       const el = elements[index];
@@ -546,8 +566,6 @@ export default function Canvas({
         elementsCopy[index] = updated;
         setElements(elementsCopy);
       } else {
-        // non-pencil shapes
-        // replicate mousemove behaviour but without streaming
         const options = {
           stroke: el.strokeColor || '#ffffff',
           strokeWidth: el.strokeWidth || 2,
@@ -693,6 +711,15 @@ export default function Canvas({
     } catch {}
   };
 
+  // detect touch-capable devices so we can selectively disable single-finger touch drawing
+  const isTouchDeviceRef = React.useRef(false);
+  useEffect(() => {
+    try {
+      isTouchDeviceRef.current = typeof window !== "undefined" && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+    } catch (e) {
+      isTouchDeviceRef.current = false;
+    }
+  }, []);
   // listen for pointer messages from websocket
   useEffect(() => {
     const ws = wsRef.current;
@@ -703,21 +730,36 @@ export default function Canvas({
           const msg = JSON.parse(ev.data as string);
           // handle drawing sync/stream/init and lock/unlock messages
           if (msg.type === 'sync' && Array.isArray(msg.shapes)) {
-            // server authoritative sync of all shapes
-            setElements(msg.shapes as DrawingElement[]);
+            // server authoritative sync of all shapes - sanitize null/invalid entries
+            const safe = (msg.shapes as unknown[]).filter((s): s is DrawingElement => !!s && typeof s === 'object');
+            setElements(safe as DrawingElement[]);
             return;
           }
           if (msg.type === 'init' && Array.isArray(msg.shapes)) {
-            setElements(msg.shapes as DrawingElement[]);
+            const safe = (msg.shapes as unknown[]).filter((s): s is DrawingElement => !!s && typeof s === 'object');
+            setElements(safe as DrawingElement[]);
             return;
           }
           if (msg.type === 'stream' && typeof msg.index === 'number' && msg.element) {
             // ignore our own streams
             if (msg.userId === userId) return;
+            const incoming = msg.element;
+            if (!incoming || typeof incoming !== 'object') return;
             updateElements((prev) => {
               const copy = [...prev];
-              copy[msg.index] = msg.element as DrawingElement;
-              return copy;
+              const idx = Number(msg.index);
+              if (idx < 0) return copy;
+              if (idx === copy.length) {
+                copy.push(incoming as DrawingElement);
+              } else if (idx < copy.length) {
+                copy[idx] = incoming as DrawingElement;
+              } else {
+                // fill the gap with existing items or skip to avoid sparse arrays; push to reach index
+                while (copy.length < idx) copy.push(undefined as unknown as DrawingElement);
+                copy[idx] = incoming as DrawingElement;
+              }
+              // remove any accidental nulls
+              return copy.filter((c) => c && typeof c === 'object');
             });
             return;
           }

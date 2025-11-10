@@ -31,6 +31,8 @@ export default function CanvasElement({ elements, zoom, panX = 0, panY = 0, canv
     ctx.scale(zoom, zoom);
 
     elements.forEach((el) => {
+      // defensive: skip null/invalid elements which may come from malformed websocket payloads
+      if (!el || typeof el !== "object") return;
       const stroke = el.strokeColor ?? "white";
       const lw = el.strokeWidth ?? 2;
 
