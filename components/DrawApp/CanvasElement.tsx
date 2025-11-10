@@ -31,6 +31,9 @@ export default function CanvasElement({ elements, zoom, panX = 0, panY = 0, canv
     ctx.scale(zoom, zoom);
 
     elements.forEach((el) => {
+      // defensive: skip null/undefined elements which can appear when
+      // the server or other clients send sparse arrays or removed items
+      if (!el) return;
       const stroke = el.strokeColor ?? "white";
       const lw = el.strokeWidth ?? 2;
 
