@@ -38,7 +38,7 @@ export default function RoomClient({
       {/* Floating Toggle Buttons */}
       <ButtonWithLoader
         onClick={() => setShowVideoCall((prev) => !prev)}
-        className="fixed top-4 right-4 z-50 bg-white/90 text-black px-3 py-2 rounded-md shadow md:px-4"
+        className="!fixed top-4 right-4 z-50 bg-white/90 text-black px-3 py-2 rounded-md shadow md:px-4"
       >
         Video
       </ButtonWithLoader>
@@ -49,7 +49,7 @@ export default function RoomClient({
           if (showMessages) return setShowMessages(false);
           setShowMessagesLoading(true);
         }}
-        className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-white/90 text-black px-4 py-2 rounded-md shadow md:left-4 md:translate-x-0"
+        className="!fixed bottom-4 !left-1/2 -translate-x-1/2 z-50 bg-white/90 text-black px-4 py-2 rounded-md shadow md:left-4 md:translate-x-0"
       >
         Chat
       </ButtonWithLoader>
