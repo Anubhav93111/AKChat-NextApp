@@ -491,11 +491,30 @@ export default function VideoCall() {
             {JSON.stringify(
               Object.keys(remoteStreams).map((k) => {
                 const s = remoteStreams[Number(k)];
+                const el = remoteVideoRefs.current[Number(k)];
                 return {
                   peerId: Number(k),
-                  tracks: s ? s.getTracks().map((t) => ({ kind: t.kind, id: t.id, enabled: t.enabled })) : [],
-                  videoElementPresent: !!remoteVideoRefs.current[Number(k)],
-                  videoElementMuted: remoteVideoRefs.current[Number(k)] ? !!remoteVideoRefs.current[Number(k)]!.muted : null,
+                  stream: s ? {
+                    id: s.id,
+                    active: s.active,
+                    tracks: s.getTracks().map((t) => ({ 
+                      kind: t.kind, 
+                      id: t.id, 
+                      enabled: t.enabled,
+                      readyState: t.readyState,
+                      muted: t.muted,
+                      label: t.label
+                    }))
+                  } : null,
+                  videoElement: el ? {
+                    srcObject: !!el.srcObject,
+                    readyState: el.readyState,
+                    videoWidth: el.videoWidth,
+                    videoHeight: el.videoHeight,
+                    paused: el.paused,
+                    muted: el.muted,
+                    currentTime: el.currentTime
+                  } : null
                 };
               }),
               null,
@@ -537,7 +556,7 @@ export default function VideoCall() {
               return (
                 <div
                   key={k}
-                  className={`w-full rounded-xl overflow-hidden border-4 video-card-220 ${
+                  className={`w-full rounded-xl overflow-hidden border-4 video-card-220 relative ${
                     hasVideo ? "border-red-600" : "border-slate-700"
                   }`}
                 >
@@ -545,7 +564,7 @@ export default function VideoCall() {
                     autoPlay
                     playsInline
                     muted
-                    className="w-full h-full object-cover bg-black"
+                    className="remote-video"
                     style={{ display: hasVideo ? 'block' : 'none' }}
                     ref={(el) => {
                       remoteVideoRefs.current[id] = el;
@@ -553,12 +572,55 @@ export default function VideoCall() {
                         try {
                           if (el.srcObject !== stream) {
                             console.log('[VideoCall] 🎬 Setting srcObject in ref callback for peer', id);
+                            console.log('[VideoCall] Stream details:', {
+                              id: stream.id,
+                              active: stream.active,
+                              tracks: stream.getTracks().map(t => ({
+                                kind: t.kind,
+                                id: t.id,
+                                enabled: t.enabled,
+                                readyState: t.readyState,
+                                muted: t.muted,
+                                label: t.label
+                              }))
+                            });
                             el.srcObject = stream;
                             // Force load
                             el.load();
                           }
                           // Always start muted to avoid echo, user can enable audio later
                           el.muted = !remoteAudioEnabledRef.current;
+                          
+                          // Add event listeners to diagnose why video isn't showing
+                          el.onloadedmetadata = () => {
+                            console.log('[VideoCall] 📊 Metadata loaded for peer', id, {
+                              videoWidth: el.videoWidth,
+                              videoHeight: el.videoHeight,
+                              duration: el.duration
+                            });
+                          };
+                          
+                          el.onloadeddata = () => {
+                            console.log('[VideoCall] 📦 Data loaded for peer', id);
+                          };
+                          
+                          el.oncanplay = () => {
+                            console.log('[VideoCall] ▶️ Can play for peer', id);
+                          };
+                          
+                          el.onplaying = () => {
+                            console.log('[VideoCall] ✅ PLAYING for peer', id, {
+                              videoWidth: el.videoWidth,
+                              videoHeight: el.videoHeight,
+                              paused: el.paused,
+                              currentTime: el.currentTime
+                            });
+                          };
+                          
+                          el.onerror = (e) => {
+                            console.error('[VideoCall] ❌ Video error for peer', id, e);
+                          };
+                          
                           // ALWAYS attempt to play - critical for video to show
                           console.log('[VideoCall] 🎮 Attempting autoplay for peer', id);
                           attemptPlay(el);
@@ -568,6 +630,12 @@ export default function VideoCall() {
                       }
                     }}
                   />
+                  {/* Debug overlay - shows when video should be playing */}
+                  {hasVideo && (
+                    <div className="absolute top-1 right-1 bg-black/70 text-white text-xs px-2 py-1 rounded pointer-events-none">
+                      Peer {id}
+                    </div>
+                  )}
                   {!hasVideo && (
                     <div className="w-full h-full flex flex-col items-center justify-center text-slate-200 bg-slate-800">
                       <svg
