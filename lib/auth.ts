@@ -82,6 +82,23 @@ export const authOptions: NextAuthOptions = {
                         token.id = dbUser.id.toString();
                         token.name = dbUser.name;
                         token.email = dbUser.email;
+                        // Notify websocket server (optional) so other connected devices can react
+                        try {
+                            const notifyUrl = process.env.WS_NOTIFY_URL;
+                            const adminSecret = process.env.WS_ADMIN_SECRET;
+                            if (notifyUrl) {
+                                // best-effort notify; don't block signin on failures
+                                const headers: Record<string, string> = { 'content-type': 'application/json' };
+                                if (adminSecret) headers['x-admin-secret'] = adminSecret;
+                                fetch(notifyUrl, {
+                                    method: 'POST',
+                                    headers,
+                                    body: JSON.stringify({ userId: dbUser.id, name: dbUser.name, url: `/user/${dbUser.name}` }),
+                                }).catch((e) => console.warn('[NextAuth] notify ws server failed', e));
+                            }
+                        } catch (e) {
+                            console.warn('[NextAuth] ws notify error', e);
+                        }
                     } else {
                         // fallback to whatever the provider returned
                         token.id = providerUser.id ?? token.id;
