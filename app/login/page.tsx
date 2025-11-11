@@ -38,19 +38,20 @@ export default function LoginPage() {
 
     setIsSubmitting(true);
     try {
-      // Use redirect: true to let NextAuth handle everything server-side
-      // This eliminates all race conditions and browser inconsistencies
-      await signIn("credentials", {
+      const res = await signIn("credentials", {
         email,
         password,
-        redirect: true,
-        callbackUrl: `/api/post-login`, // Server-side redirect with session
+        redirect: false,
       });
-      
-      // This code won't execute if redirect succeeds
-      // Only runs if there's an error
-      setMessage("❌ Invalid credentials");
-      setIsSubmitting(false);
+
+      if (res?.ok) {
+        // Redirect to server-side API that will handle the user page redirect
+        // This ensures cookies are properly set before accessing protected routes
+        window.location.href = '/api/post-login';
+      } else {
+        setMessage("❌ Invalid credentials");
+        setIsSubmitting(false);
+      }
     } catch (err) {
       setMessage("❌ Unexpected error");
       setIsSubmitting(false);
