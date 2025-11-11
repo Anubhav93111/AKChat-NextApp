@@ -1,8 +1,8 @@
 "use client";
 
-import { signIn } from "next-auth/react";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { signIn, useSession } from "next-auth/react";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { loginSchema } from "@/lib/validations/login";
 import { motion } from "framer-motion";
 import Loader from "@/components/Loader";
@@ -17,6 +17,20 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loaderFinished, setLoaderFinished] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { data: session } = useSession();
+
+  // Handle OAuth callback redirect
+  useEffect(() => {
+    if (session?.user) {
+      const callbackUrl = searchParams.get('callbackUrl');
+      if (callbackUrl) {
+        router.push(callbackUrl);
+      } else if (session.user.name) {
+        router.push(`/user/${session.user.name}`);
+      }
+    }
+  }, [session, router, searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -134,7 +148,10 @@ export default function LoginPage() {
           <div className="flex items-center gap-2 justify-center">
             <button
               type="button"
-              onClick={() => signIn('google')}
+              onClick={() => {
+                const callbackUrl = `/user/${email || 'dashboard'}`;
+                signIn('google', { callbackUrl });
+              }}
               className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm text-white"
             >
               Sign in with Google
