@@ -414,20 +414,38 @@ export default function VideoCall() {
         if (el) {
           try {
             if (el.srcObject !== stream) {
-              console.log('[VideoCall] attaching remote stream to element for', id);
+              console.log('[VideoCall] ⚡ FORCE attaching remote stream to element for peer', id);
+              console.log('[VideoCall] Stream tracks:', stream.getTracks().map(t => ({
+                kind: t.kind,
+                id: t.id,
+                enabled: t.enabled,
+                readyState: t.readyState,
+                muted: t.muted
+              })));
               el.srcObject = stream;
+              // Force load the video
+              el.load();
             }
             try { el.muted = !remoteAudioEnabledRef.current; } catch {}
             // log some state useful for debugging
-            try { console.log('[VideoCall] video element readyState', id, el.readyState, 'videoWidth/Height', el.videoWidth, el.videoHeight); } catch {}
-            // attempt to play if allowed
-            if (remoteAudioEnabledRef.current) attemptPlay(el);
+            try { 
+              console.log('[VideoCall] 📺 Video element state for peer', id, {
+                readyState: el.readyState,
+                videoWidth: el.videoWidth,
+                videoHeight: el.videoHeight,
+                paused: el.paused,
+                muted: el.muted,
+                srcObject: !!el.srcObject
+              }); 
+            } catch {}
+            // attempt to play - CRITICAL for video to show!
+            attemptPlay(el);
           } catch (err) {
             console.warn('[VideoCall] failed to attach stream in remoteStreams effect', id, err);
           }
         } else {
           // element not yet mounted; will be attached in ref callback later
-          console.log('[VideoCall] remote element not mounted yet for', id);
+          console.log('[VideoCall] ⏳ remote element not mounted yet for', id);
         }
       }
     }, [remoteStreams]);
@@ -515,7 +533,7 @@ export default function VideoCall() {
               const id = Number(k);
               const stream = remoteStreams[id];
               const hasVideo =
-                !!stream && stream.getVideoTracks().some((t) => t.enabled !== false);
+                !!stream && stream.getVideoTracks().length > 0;
               return (
                 <div
                   key={k}
@@ -523,26 +541,35 @@ export default function VideoCall() {
                     hasVideo ? "border-red-600" : "border-slate-700"
                   }`}
                 >
-                  {hasVideo ? (
-                    <video
-                      autoPlay
-                      playsInline
-                      className="w-full h-full object-cover"
-                      ref={(el) => {
-                        remoteVideoRefs.current[id] = el;
-                        if (el && stream) {
-                          try {
-                            if (el.srcObject !== stream) el.srcObject = stream;
-                            try { el.muted = !remoteAudioEnabledRef.current; } catch {}
-                            if (remoteAudioEnabledRef.current) attemptPlay(el);
-                          } catch (e) {
-                            console.warn('[VideoCall] failed to attach stream in ref', e);
+                  <video
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover bg-black"
+                    style={{ display: hasVideo ? 'block' : 'none' }}
+                    ref={(el) => {
+                      remoteVideoRefs.current[id] = el;
+                      if (el && stream) {
+                        try {
+                          if (el.srcObject !== stream) {
+                            console.log('[VideoCall] 🎬 Setting srcObject in ref callback for peer', id);
+                            el.srcObject = stream;
+                            // Force load
+                            el.load();
                           }
+                          // Always start muted to avoid echo, user can enable audio later
+                          el.muted = !remoteAudioEnabledRef.current;
+                          // ALWAYS attempt to play - critical for video to show
+                          console.log('[VideoCall] 🎮 Attempting autoplay for peer', id);
+                          attemptPlay(el);
+                        } catch (e) {
+                          console.warn('[VideoCall] ❌ failed to attach stream in ref', e);
                         }
-                      }}
-                    />
-                  ) : (
-                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-200">
+                      }
+                    }}
+                  />
+                  {!hasVideo && (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-200 bg-slate-800">
                       <svg
                         xmlns="http://www.w3.org/2000/svg"
                         className="w-14 h-14 text-slate-300"
