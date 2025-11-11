@@ -72,6 +72,14 @@ export const authOptions: NextAuthOptions = {
             }
 
             return session
+        },
+        async redirect({ url, baseUrl }) {
+            // If url is a relative path, prepend baseUrl
+            if (url.startsWith("/")) return `${baseUrl}${url}`;
+            // If url is on the same origin, return it
+            if (new URL(url).origin === baseUrl) return url;
+            // Otherwise return base URL
+            return baseUrl;
         }
     },
     pages: {
