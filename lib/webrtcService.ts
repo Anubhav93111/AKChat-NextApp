@@ -35,7 +35,7 @@ export function createPeerManager(
       // Access them via globalThis to avoid process is not defined error
       const raw = typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_ICE_SERVERS 
         ? process.env.NEXT_PUBLIC_ICE_SERVERS 
-        : (globalThis as any).NEXT_PUBLIC_ICE_SERVERS;
+        : (globalThis as Record<string, unknown>).NEXT_PUBLIC_ICE_SERVERS as string | undefined;
       
       if (raw && typeof raw === 'string') {
         const parsed = JSON.parse(raw);
