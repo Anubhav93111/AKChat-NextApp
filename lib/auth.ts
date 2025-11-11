@@ -70,6 +70,18 @@ export const authOptions: NextAuthOptions = {
             }
 
             return session
+        },
+        async redirect({ url, baseUrl }) {
+            // After successful signin, redirect to user page based on session
+            // This runs SERVER-SIDE so cookies are always available
+            if (url.startsWith(baseUrl)) {
+                return url;
+            }
+            // If url starts with /, it's a relative URL
+            if (url.startsWith("/")) {
+                return `${baseUrl}${url}`;
+            }
+            return baseUrl;
         }
     },
     pages: {

@@ -38,32 +38,21 @@ export default function LoginPage() {
 
     setIsSubmitting(true);
     try {
-      const res = await signIn("credentials", {
+      // Use redirect: true to let NextAuth handle everything server-side
+      // This eliminates all race conditions and browser inconsistencies
+      await signIn("credentials", {
         email,
         password,
-        redirect: false,
+        redirect: true,
+        callbackUrl: `/api/post-login`, // Server-side redirect with session
       });
-
-      if (res?.ok) {
-        // Wait for session to be fully established
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        const sessionRes = await fetch("/api/auth/session");
-        const session = await sessionRes.json();
-
-        const username = session?.user?.name;
-        if (username) {
-          // Use window.location.href for a full page reload with cookies
-          window.location.href = `/user/${username}`;
-        } else {
-          window.location.href = "/";
-        }
-      } else {
-        setMessage("❌ Invalid credentials");
-      }
+      
+      // This code won't execute if redirect succeeds
+      // Only runs if there's an error
+      setMessage("❌ Invalid credentials");
+      setIsSubmitting(false);
     } catch (err) {
       setMessage("❌ Unexpected error");
-    } finally {
       setIsSubmitting(false);
     }
   };
