@@ -9,6 +9,7 @@ import Loader from "@/components/Loader";
 import ButtonWithLoader from "@/components/ButtonWithLoader";
 import PageLoader from "@/components/PageLoader";
 
+// Login page - credentials only (no OAuth)
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
