@@ -59,6 +59,16 @@ export function RoomSocketProvider({
           const d = JSON.parse(event.data);
           console.log('[RoomSocket] message received', d);
           if (d.type === "register-success") setAuthorized(true);
+          
+          // Handle cross-device sign-in notification
+          if (d.type === "user-signed-in" && d.userId === userId && d.url) {
+            console.log('[RoomSocket] user signed in on another device, url:', d.url);
+            // Show a toast or notification (you can integrate react-hot-toast or similar)
+            // For now, log and optionally navigate
+            if (typeof window !== 'undefined' && window.confirm(`You signed in on another device. Go to ${d.url}?`)) {
+              window.location.href = d.url;
+            }
+          }
         } catch (err) {
           console.warn('[RoomSocket] failed to parse message', err);
         }
