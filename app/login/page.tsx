@@ -37,21 +37,31 @@ export default function LoginPage() {
     }
 
     setIsSubmitting(true);
-    
-    // Let NextAuth handle the redirect - this ensures cookies are properly set
-    // and the middleware can validate them on the server side
-    const signInResult = await signIn("credentials", {
-      email,
-      password,
-      callbackUrl: `/api/auth/redirect-after-login`,
-    });
+    try {
+      const res = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
 
-    // If there's an error, show it
-    if (signInResult?.error) {
-      setMessage("❌ Invalid credentials");
+      if (res?.ok) {
+        const sessionRes = await fetch("/api/auth/session");
+        const session = await sessionRes.json();
+
+        const username = session?.user?.name;
+        if (username) {
+          router.push(`/user/${username}`);
+        } else {
+          router.push("/");
+        }
+      } else {
+        setMessage("❌ Invalid credentials");
+      }
+    } catch (err) {
+      setMessage("❌ Unexpected error");
+    } finally {
       setIsSubmitting(false);
     }
-    // If successful, NextAuth will redirect to callbackUrl automatically
   };
 
   return (

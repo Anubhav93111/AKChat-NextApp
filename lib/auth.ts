@@ -49,13 +49,11 @@ export const authOptions: NextAuthOptions = {
     ],
     callbacks: {
         async jwt({ token, user }) {
-            // When `user` is present, this is the first sign-in after authenticate.
             if (user) {
                 token.id = user.id;
-                token.name = user.name;
-                token.email = user.email;
+                token.name = user.name; // store name in token
             }
-            return token;
+            return token
         },
         async session({ session, token }) {
 
@@ -72,14 +70,6 @@ export const authOptions: NextAuthOptions = {
             }
 
             return session
-        },
-        async redirect({ url, baseUrl }) {
-            // If url is a relative path, prepend baseUrl
-            if (url.startsWith("/")) return `${baseUrl}${url}`;
-            // If url is on the same origin, return it
-            if (new URL(url).origin === baseUrl) return url;
-            // Otherwise return base URL
-            return baseUrl;
         }
     },
     pages: {
