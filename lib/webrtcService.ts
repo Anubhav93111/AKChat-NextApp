@@ -27,9 +27,23 @@ export function createPeerManager(
 
     console.log('[webrtcService] creating new RTCPeerConnection for', peerId);
 
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    });
+    // allow build-time configuration of ICE servers via NEXT_PUBLIC_ICE_SERVERS
+    // Example: NEXT_PUBLIC_ICE_SERVERS='[{"urls":"stun:stun.l.google.com:19302"}]'
+    let iceServers: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
+    try {
+      // process.env.NEXT_PUBLIC_ICE_SERVERS is injected at build time in Next.js
+      // use a typed lookup to avoid `any` eslint rule
+      const env = process.env as Record<string, string | undefined>;
+      const raw = env.NEXT_PUBLIC_ICE_SERVERS;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) iceServers = parsed as RTCIceServer[];
+      }
+    } catch (err) {
+      console.warn('[webrtcService] failed to parse NEXT_PUBLIC_ICE_SERVERS, falling back to default', err);
+    }
+
+    const pc = new RTCPeerConnection({ iceServers });
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -61,12 +75,73 @@ export function createPeerManager(
       options.onTrack?.(stream, peerId);
     };
 
+    pc.oniceconnectionstatechange = () => {
+      try { console.log('[webrtcService] iceConnectionState for', peerId, pc.iceConnectionState); } catch {}
+      try { console.log('[webrtcService] connectionState for', peerId, pc.connectionState); } catch {}
+      // If connection becomes 'failed' or 'disconnected' keep detailed logs available
+    };
+
+    pc.onicegatheringstatechange = () => {
+      try { console.log('[webrtcService] iceGatheringState for', peerId, pc.iceGatheringState); } catch {}
+    };
+
+    pc.onnegotiationneeded = () => {
+      try { console.log('[webrtcService] negotiationneeded for', peerId); } catch {}
+    };
+
+    // periodic diagnostics: collect basic stats while the PC is alive
+    let statsInterval: number | null = null;
+    const startStats = () => {
+      if (statsInterval) return;
+      statsInterval = window.setInterval(async () => {
+        try {
+          const stats = await pc.getStats();
+          // log a small summary: candidate-pair, outbound/inbound bytes
+          stats.forEach((report) => {
+            try {
+                  if (report.type === 'candidate-pair') {
+                    const r = report as unknown as { state?: string; nominated?: boolean; transportId?: string };
+                    if (r.state) {
+                      console.log('[webrtcService][stats]', peerId, 'candidate-pair', r.state, 'nominated=', r.nominated, 'transportId=', r.transportId);
+                    }
+                  }
+                  if (report.type === 'outbound-rtp') {
+                    const r = report as unknown as { kind?: string; bytesSent?: number };
+                    console.log('[webrtcService][stats]', peerId, 'outbound-rtp', r.kind, 'bytesSent=', r.bytesSent);
+                  }
+                  if (report.type === 'inbound-rtp') {
+                    const r = report as unknown as { kind?: string; bytesReceived?: number };
+                    console.log('[webrtcService][stats]', peerId, 'inbound-rtp', r.kind, 'bytesReceived=', r.bytesReceived);
+                  }
+            } catch (e) { }
+          });
+        } catch (e) {
+          // ignore
+        }
+      }, 5000) as unknown as number;
+    };
+
+    const stopStats = () => {
+      if (!statsInterval) return;
+      try { clearInterval(statsInterval); } catch {}
+      statsInterval = null;
+    };
+
     pc.onconnectionstatechange = () => {
       try { console.log('[webrtcService] connectionState for', peerId, pc.connectionState); } catch { }
       // when connection fails we keep the pc around for debugging; callers can dispose and recreate if needed
     };
 
     peers.set(peerId, pc);
+    // when connection state transitions to connected, start stats
+    try {
+      pc.addEventListener('connectionstatechange', () => {
+        try {
+          if (pc.connectionState === 'connected') startStats();
+          if (pc.connectionState === 'closed' || pc.connectionState === 'failed' || pc.connectionState === 'disconnected') stopStats();
+        } catch (e) {}
+      });
+    } catch {}
     return pc;
   }
 

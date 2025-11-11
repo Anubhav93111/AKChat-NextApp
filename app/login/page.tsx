@@ -130,6 +130,20 @@ export default function LoginPage() {
           Login
         </ButtonWithLoader>
 
+        {process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? (
+          <div className="flex items-center gap-2 justify-center">
+            <button
+              type="button"
+              onClick={() => signIn('google')}
+              className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm text-white"
+            >
+              Sign in with Google
+            </button>
+          </div>
+        ) : (
+          <div className="text-xs text-slate-400 text-center">Google sign-in not configured</div>
+        )}
+
         {message && <p className="text-center text-sm text-slate-300">{message}</p>}
 
         <p className="text-center text-sm text-slate-400">
