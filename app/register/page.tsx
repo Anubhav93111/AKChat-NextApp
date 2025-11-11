@@ -86,6 +86,19 @@ export default function RegisterPage() {
       setMessage("❌ Please verify your email first");
       return;
     }
+    // client-side validation before sending to server
+    const newFieldErrors: { email?: string; password?: string; name?: string } = {};
+    // name: at least 6 chars, no spaces
+    if (!/^\S{6,}$/.test(name)) newFieldErrors.name = "Name must be at least 6 characters and contain no spaces";
+    // password: at least 6 chars, at least one lower and one upper, no spaces
+    if (!/^(?=.*[a-z])(?=.*[A-Z])\S{6,}$/.test(password))
+      newFieldErrors.password = "Password must be at least 6 chars, contain both lowercase and uppercase letters, and have no spaces";
+
+    if (Object.keys(newFieldErrors).length > 0) {
+      setFieldErrors(newFieldErrors);
+      setMessage("❌ Fix the highlighted fields");
+      return;
+    }
 
     setRegistering(true);
     try {
@@ -157,7 +170,7 @@ export default function RegisterPage() {
           type="email"
           placeholder="Email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => { setEmail(e.target.value); setFieldErrors(prev => ({ ...prev, email: undefined })); }}
           required
           className="bg-transparent text-white px-4 py-3 rounded-xl border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
@@ -198,7 +211,7 @@ export default function RegisterPage() {
           type="text"
           placeholder="Name"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => { setName(e.target.value); setFieldErrors(prev => ({ ...prev, name: undefined })); }}
           required
           disabled={!otpVerified}
           className={`bg-transparent text-white px-4 py-3 rounded-xl border ${
@@ -211,7 +224,7 @@ export default function RegisterPage() {
           type="password"
           placeholder="Password"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={(e) => { setPassword(e.target.value); setFieldErrors(prev => ({ ...prev, password: undefined })); }}
           required
           disabled={!otpVerified}
           className={`bg-transparent text-white px-4 py-3 rounded-xl border ${

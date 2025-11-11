@@ -1,15 +1,15 @@
 "use client";
 
-import { signIn } from "next-auth/react";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { signIn, useSession } from "next-auth/react";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { loginSchema } from "@/lib/validations/login";
 import { motion } from "framer-motion";
 import Loader from "@/components/Loader";
 import ButtonWithLoader from "@/components/ButtonWithLoader";
 import PageLoader from "@/components/PageLoader";
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -17,6 +17,20 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loaderFinished, setLoaderFinished] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const { data: session } = useSession();
+
+  // Handle OAuth callback redirect
+  useEffect(() => {
+    if (session?.user) {
+      const callbackUrl = searchParams.get('callbackUrl');
+      if (callbackUrl) {
+        router.push(callbackUrl);
+      } else if (session.user.name) {
+        router.push(`/user/${session.user.name}`);
+      }
+    }
+  }, [session, router, searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,6 +144,23 @@ export default function LoginPage() {
           Login
         </ButtonWithLoader>
 
+        {process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ? (
+          <div className="flex items-center gap-2 justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                const callbackUrl = `/user/${email || 'dashboard'}`;
+                signIn('google', { callbackUrl });
+              }}
+              className="mt-2 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm text-white"
+            >
+              Sign in with Google
+            </button>
+          </div>
+        ) : (
+          <div className="text-xs text-slate-400 text-center">Google sign-in not configured</div>
+        )}
+
         {message && <p className="text-center text-sm text-slate-300">{message}</p>}
 
         <p className="text-center text-sm text-slate-400">
@@ -144,5 +175,19 @@ export default function LoginPage() {
         </p>
       </motion.form>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <PageLoader
+        variant="login"
+        line="Loading login..."
+        duration={1000}
+      />
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
