@@ -45,16 +45,21 @@ export default function LoginPage() {
     });
 
     if (res?.ok) {
-      // Session is created, now do a full page reload to ensure cookies are recognized
-      const sessionRes = await fetch("/api/auth/session");
+      // Give the browser time to set the cookie
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Fetch session to get the username
+      const sessionRes = await fetch("/api/auth/session", {
+        credentials: 'include', // Important: include credentials
+      });
       const session = await sessionRes.json();
 
       const username = session?.user?.name;
       if (username) {
-        // Full page reload ensures middleware sees the session cookie
-        window.location.replace(`/user/${username}`);
+        // Use router.push for client-side navigation
+        router.push(`/user/${username}`);
       } else {
-        window.location.replace("/");
+        router.push("/");
       }
     } else {
       setMessage("❌ Invalid credentials");

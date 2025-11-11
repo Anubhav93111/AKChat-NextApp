@@ -92,7 +92,7 @@ export const authOptions: NextAuthOptions = {
                 sameSite: 'lax',
                 path: '/',
                 secure: ((process.env.NEXTAUTH_URL || '').startsWith('https') || process.env.NODE_ENV === 'production') as boolean,
-                domain: process.env.NODE_ENV === 'production' ? '.inksync.live' : undefined,
+                // Don't set domain - let it default to the current domain
             },
         },
     },
