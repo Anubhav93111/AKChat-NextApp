@@ -92,19 +92,5 @@ export const authOptions: NextAuthOptions = {
         strategy: "jwt",
         maxAge: 30 * 24 * 60 * 60
     },
-    // Ensure cookies set by NextAuth are marked secure when the site is served over HTTPS.
-    // Use NEXTAUTH_URL to decide if cookies should be secure (helpful when NODE_ENV isn't enough).
-    cookies: {
-        sessionToken: {
-            name: `next-auth.session-token`,
-            options: {
-                httpOnly: true,
-                sameSite: 'lax',
-                path: '/',
-                secure: ((process.env.NEXTAUTH_URL || '').startsWith('https') || process.env.NODE_ENV === 'production') as boolean,
-                // Don't set domain - let it default to the current domain
-            },
-        },
-    },
     secret: process.env.NEXTAUTH_SECRET
 }
