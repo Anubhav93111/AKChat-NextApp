@@ -1,23 +1,11 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import GoogleProvider from "next-auth/providers/google";
 import { prisma } from "./prisma";
 import bcrypt from "bcryptjs";
 import { loginSchema } from "./validations/login";
 
 export const authOptions: NextAuthOptions = {
     providers: [
-        // Register Google provider only when env vars are present to avoid runtime errors
-        ...(function createGoogleProvider() {
-            const clientId = process.env.GOOGLE_CLIENT_ID || process.env.NEXTAUTH_GOOGLE_CLIENT_ID;
-            const clientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.NEXTAUTH_GOOGLE_CLIENT_SECRET;
-            if (clientId && clientSecret) {
-                return [GoogleProvider({ clientId, clientSecret })];
-            }
-            try { console.warn('[NextAuth] Google provider not configured (missing GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET)'); } catch {}
-            return [];
-        })(),
-
         CredentialsProvider({
             name: "credentials",
             credentials: {
@@ -60,53 +48,12 @@ export const authOptions: NextAuthOptions = {
         })
     ],
     callbacks: {
-    async jwt({ token, user }) {
+        async jwt({ token, user }) {
             // When `user` is present, this is the first sign-in after authenticate.
             if (user) {
-                // For OAuth providers (Google) ensure user exists in DB and set token.id
-                try {
-                    // avoid `any` by using a narrow unknown->typed shape for provider user
-                    const providerUser = user as unknown as { email?: string; name?: string; id?: string };
-                    const email = providerUser.email as string | undefined;
-                    const name = providerUser.name as string | undefined;
-                    if (email) {
-                        // upsert user record for OAuth logins
-                        // generate a random password hash for OAuth-created users so DB constraints are satisfied
-                        const randomPwd = Math.random().toString(36).slice(2);
-                        const hashed = await bcrypt.hash(randomPwd, 10);
-                        const dbUser = await prisma.user.upsert({
-                            where: { email },
-                            update: { name: name ?? undefined },
-                            create: { email, name: name ?? '', password: hashed },
-                        });
-                        token.id = dbUser.id.toString();
-                        token.name = dbUser.name;
-                        token.email = dbUser.email;
-                        // Notify websocket server (optional) so other connected devices can react
-                        try {
-                            const notifyUrl = process.env.WS_NOTIFY_URL;
-                            const adminSecret = process.env.WS_ADMIN_SECRET;
-                            if (notifyUrl) {
-                                // best-effort notify; don't block signin on failures
-                                const headers: Record<string, string> = { 'content-type': 'application/json' };
-                                if (adminSecret) headers['x-admin-secret'] = adminSecret;
-                                fetch(notifyUrl, {
-                                    method: 'POST',
-                                    headers,
-                                    body: JSON.stringify({ userId: dbUser.id, name: dbUser.name, url: `/user/${dbUser.name}` }),
-                                }).catch((e) => console.warn('[NextAuth] notify ws server failed', e));
-                            }
-                        } catch (e) {
-                            console.warn('[NextAuth] ws notify error', e);
-                        }
-                    } else {
-                        // fallback to whatever the provider returned
-                        token.id = providerUser.id ?? token.id;
-                        token.name = providerUser.name ?? token.name;
-                    }
-                } catch (err) {
-                    console.warn('[NextAuth] jwt upsert user failed', err);
-                }
+                token.id = user.id;
+                token.name = user.name;
+                token.email = user.email;
             }
             return token;
         },
@@ -125,13 +72,6 @@ export const authOptions: NextAuthOptions = {
             }
 
             return session
-        },
-        async redirect({ url, baseUrl }) {
-            // Allows relative callback URLs
-            if (url.startsWith("/")) return `${baseUrl}${url}`
-            // Allows callback URLs on the same origin
-            else if (new URL(url).origin === baseUrl) return url
-            return baseUrl
         }
     },
     pages: {
