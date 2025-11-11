@@ -1,7 +1,7 @@
 "use client";
 
 import { signIn, useSession } from "next-auth/react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { loginSchema } from "@/lib/validations/login";
 import { motion } from "framer-motion";
@@ -9,7 +9,7 @@ import Loader from "@/components/Loader";
 import ButtonWithLoader from "@/components/ButtonWithLoader";
 import PageLoader from "@/components/PageLoader";
 
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -175,5 +175,19 @@ export default function LoginPage() {
         </p>
       </motion.form>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={
+      <PageLoader
+        variant="login"
+        line="Loading login..."
+        duration={1000}
+      />
+    }>
+      <LoginForm />
+    </Suspense>
   );
 }
