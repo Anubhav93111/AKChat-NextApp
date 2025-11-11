@@ -31,13 +31,18 @@ export function createPeerManager(
     // Example: NEXT_PUBLIC_ICE_SERVERS='[{"urls":"stun:stun.l.google.com:19302"}]'
     let iceServers: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
     try {
-      // process.env.NEXT_PUBLIC_ICE_SERVERS is injected at build time in Next.js
-      // use a typed lookup to avoid `any` eslint rule
-      const env = process.env as Record<string, string | undefined>;
-      const raw = env.NEXT_PUBLIC_ICE_SERVERS;
-      if (raw) {
+      // In Next.js, NEXT_PUBLIC_ vars are replaced at build time
+      // Access them via globalThis to avoid process is not defined error
+      const raw = typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_ICE_SERVERS 
+        ? process.env.NEXT_PUBLIC_ICE_SERVERS 
+        : (globalThis as any).NEXT_PUBLIC_ICE_SERVERS;
+      
+      if (raw && typeof raw === 'string') {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) iceServers = parsed as RTCIceServer[];
+        if (Array.isArray(parsed)) {
+          iceServers = parsed as RTCIceServer[];
+          console.log('[webrtcService] ✅ Using custom ICE servers:', iceServers.length, 'servers');
+        }
       }
     } catch (err) {
       console.warn('[webrtcService] failed to parse NEXT_PUBLIC_ICE_SERVERS, falling back to default', err);
