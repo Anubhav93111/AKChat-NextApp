@@ -37,33 +37,27 @@ export default function LoginPage() {
     }
 
     setIsSubmitting(true);
-    try {
-      const res = await signIn("credentials", {
-        email,
-        password,
-        redirect: false,
-      });
+    
+    const res = await signIn("credentials", {
+      email,
+      password,
+      redirect: false,
+    });
 
-      if (res?.ok) {
-        // Wait a bit for session cookie to be set
-        await new Promise(resolve => setTimeout(resolve, 100));
-        
-        const sessionRes = await fetch("/api/auth/session");
-        const session = await sessionRes.json();
+    if (res?.ok) {
+      // Session is created, now do a full page reload to ensure cookies are recognized
+      const sessionRes = await fetch("/api/auth/session");
+      const session = await sessionRes.json();
 
-        const username = session?.user?.name;
-        if (username) {
-          // Use window.location instead of router.push to ensure fresh page load with session
-          window.location.href = `/user/${username}`;
-        } else {
-          window.location.href = "/";
-        }
+      const username = session?.user?.name;
+      if (username) {
+        // Full page reload ensures middleware sees the session cookie
+        window.location.replace(`/user/${username}`);
       } else {
-        setMessage("❌ Invalid credentials");
+        window.location.replace("/");
       }
-    } catch (err) {
-      setMessage("❌ Unexpected error");
-    } finally {
+    } else {
+      setMessage("❌ Invalid credentials");
       setIsSubmitting(false);
     }
   };
