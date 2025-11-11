@@ -45,14 +45,18 @@ export default function LoginPage() {
       });
 
       if (res?.ok) {
+        // Wait for session to be fully established
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
         const sessionRes = await fetch("/api/auth/session");
         const session = await sessionRes.json();
 
         const username = session?.user?.name;
         if (username) {
-          router.push(`/user/${username}`);
+          // Use window.location.href for a full page reload with cookies
+          window.location.href = `/user/${username}`;
         } else {
-          router.push("/");
+          window.location.href = "/";
         }
       } else {
         setMessage("❌ Invalid credentials");
