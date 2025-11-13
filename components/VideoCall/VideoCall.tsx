@@ -361,6 +361,7 @@ export default function VideoCall() {
       const socket = socketRef.current;
       const trySend = () => {
         if (socket.readyState === WebSocket.OPEN) {
+          console.log('[VideoCall] 🔄 Requesting user list to initiate calls');
           socket.send(JSON.stringify({ type: "request-user-list" }));
         } else {
           setTimeout(trySend, 150);
@@ -384,6 +385,18 @@ export default function VideoCall() {
     const toggleRemoteAudio = () => {
       const newState = !remoteAudioEnabled;
       setRemoteAudioEnabled(newState);
+    };
+
+    // Force re-initiate calls to all peers (useful if one side didn't receive stream)
+    const forceReconnect = () => {
+      if (!socketRef?.current || socketRef.current.readyState !== WebSocket.OPEN) {
+        console.warn('[VideoCall] Cannot reconnect - socket not open');
+        return;
+      }
+      console.log('[VideoCall] 🔄 Force reconnecting to all peers');
+      setCalling(true);
+      callingRef.current = true;
+      socketRef.current.send(JSON.stringify({ type: "request-user-list" }));
     };
 
     // When remoteAudioEnabled changes, update all remote video elements
@@ -476,6 +489,13 @@ export default function VideoCall() {
           } text-white`}
         >
           {remoteAudioEnabled ? "Audio Enabled" : "Enable Audio"}
+        </button>
+        <button
+          onClick={forceReconnect}
+          className="px-3 py-2 rounded-md font-medium bg-blue-600 hover:bg-blue-700 text-white text-sm"
+          title="Re-initiate video calls to all peers"
+        >
+          🔄 Reconnect
         </button>
         <div className="px-3 py-2 rounded-md font-semibold text-white bg-slate-700 flex items-center gap-2">
           <span className={`inline-block w-2 h-2 rounded-full ${cameraOn ? 'bg-green-400' : 'bg-red-500'}`} />
