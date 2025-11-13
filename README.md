@@ -292,7 +292,7 @@ model Otp {
 ]
 ```
 
-**Get free TURN credentials:** [Metered.ca](https://www.metered.ca/tools/openrelay/) (50GB/month free)
+**Get free TURN credentials:** [Metered.ca](https://www.metered.ca/tools/openrelay/) (0.5GB/month free)
 
 ---
 
@@ -394,15 +394,9 @@ Contributions are welcome! Please follow these steps:
 
 ---
 
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
 ## 👤 Author
 
-**Your Name**
+**Anubhav Kumar**
 
 - Website: [www.inksync.live](https://www.inksync.live)
 - GitHub: [@YOUR_USERNAME](https://github.com/YOUR_USERNAME)
